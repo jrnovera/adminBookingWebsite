@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f7f8;
+  --surface: #ffffff;
+  --foreground: #14161c;
+  --muted: #6b7280;
+  --line: #e8e9ed;
+
+  /* Deep navy rail, like Fresha */
+  --rail: #10131f;
+  --rail-hover: #1b1f30;
+  --rail-text: #9aa1b4;
+
+  --color-primary: #6d7356;
+  --color-primary-light: #8a9070;
+  --color-primary-dark: #565b43;
+  --color-primary-50: #f4f5f0;
+  --color-primary-100: #e6e8dc;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-rail: var(--rail);
+  --color-rail-hover: var(--rail-hover);
+  --color-rail-text: var(--rail-text);
+  --color-primary: var(--color-primary);
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-primary-50: var(--color-primary-50);
+  --color-primary-100: var(--color-primary-100);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Premium surface primitives */
+@utility card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 2px rgb(16 19 31 / 0.04),
+    0 8px 24px -12px rgb(16 19 31 / 0.10);
+}
+
+@utility btn-primary {
+  background: var(--foreground);
+  color: #fff;
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+@utility btn-primary-hover {
+  opacity: 0.88;
+}
+
+@utility btn-ghost {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d3d5dd;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b9bcc7;
+  background-clip: content-box;
+}
