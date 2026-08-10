@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import { IconCalendar, IconClock, IconUsers } from "@/components/Icons";
+import { EmptyState, ErrorBanner } from "@/components/Feedback";
 import { deriveClients } from "@/lib/bookings";
 import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
@@ -36,48 +38,66 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title="Dashboard"
-        subtitle={formatDateLong(today)}
-      />
+      <PageHeader title="Dashboard" subtitle={formatDateLong(today)} />
 
-      <main className="flex-1 space-y-6 p-6">
-        {error && (
-          <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </p>
-        )}
+      <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
+        {error && <ErrorBanner message={error} />}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Today's Appointments" value={String(stats.todayCount)} />
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+          <StatCard
+            label="Today's Appointments"
+            value={String(stats.todayCount)}
+            icon={<IconCalendar size={17} />}
+            loading={loading}
+          />
           <StatCard
             label="Today's Sales"
             value={formatMoney(stats.todaySales, stats.currency)}
+            icon={<IconClock size={17} />}
+            loading={loading}
+            tone="primary"
           />
-          <StatCard label="New Clients" value={String(stats.newClients)} />
+          <StatCard
+            label="New Clients"
+            value={String(stats.newClients)}
+            icon={<IconUsers size={17} />}
+            loading={loading}
+          />
           <StatCard
             label="Returning Clients"
             value={String(stats.returningClients)}
+            icon={<IconUsers size={17} />}
+            loading={loading}
           />
         </div>
 
-        <section className="card">
-          <h2 className="border-b border-line px-5 py-3 text-sm font-semibold">
+        <section className="card overflow-hidden">
+          <h2 className="border-b border-line px-5 py-3.5 text-sm font-semibold">
             Upcoming Appointments
           </h2>
 
           {loading ? (
-            <p className="px-5 py-8 text-sm text-muted">Loading…</p>
+            <div className="divide-y divide-line">
+              {[0, 1, 2].map((row) => (
+                <div key={row} className="flex items-center gap-3 px-5 py-4">
+                  <div className="skeleton h-4 w-32 flex-1" />
+                  <div className="skeleton h-4 w-16" />
+                  <div className="skeleton h-5 w-20 rounded-full" />
+                </div>
+              ))}
+            </div>
           ) : upcoming.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-muted">
-              No upcoming appointments yet.
-            </p>
+            <EmptyState
+              icon={<IconCalendar size={22} />}
+              title="No upcoming appointments"
+              detail="New bookings from the site will show up here."
+            />
           ) : (
             <ul className="divide-y divide-line">
               {upcoming.map((booking) => (
                 <li
                   key={booking.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                  className="row-hover flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 hover:bg-background"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
@@ -90,7 +110,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-4">
                     <div className="text-right text-xs text-muted">
                       <p>{formatDateLong(booking.booking_date)}</p>
-                      <p>{booking.booking_time}</p>
+                      <p className="tabular-nums">{booking.booking_time}</p>
                     </div>
                     <StatusBadge status={booking.status} />
                   </div>
@@ -104,13 +124,40 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({
+  label,
+  value,
+  icon,
+  loading,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  loading?: boolean;
+  tone?: "default" | "primary";
+}) {
   return (
-    <div className="card px-5 py-4">
-      <p className="text-xs uppercase tracking-wide text-muted">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+    <div className="card-interactive hover:card-interactive-hover px-5 py-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">
+          {label}
+        </p>
+        <span
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+            tone === "primary"
+              ? "bg-primary-100 text-primary-dark"
+              : "bg-foreground/[0.06] text-foreground/70"
+          }`}
+        >
+          {icon}
+        </span>
+      </div>
+      {loading ? (
+        <div className="skeleton mt-2 h-8 w-20" />
+      ) : (
+        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      )}
     </div>
   );
 }

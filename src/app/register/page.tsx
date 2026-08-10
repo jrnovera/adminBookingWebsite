@@ -38,7 +38,10 @@ export default function RegisterPage() {
       footer={
         <>
           Already have an account?{" "}
-          <Link href="/login" className="text-primary underline">
+          <Link
+            href="/login"
+            className="font-medium text-primary-dark underline underline-offset-2"
+          >
             Sign in
           </Link>
         </>
@@ -55,7 +58,7 @@ export default function RegisterPage() {
             value={email}
             autoComplete="email"
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-foreground"
+            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
           />
         </label>
 
@@ -70,17 +73,25 @@ export default function RegisterPage() {
             value={password}
             autoComplete="new-password"
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-foreground"
+            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
           />
         </label>
 
-        {error && <p className="text-sm text-rose-700">{error}</p>}
-        {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+        {error && (
+          <p className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            {notice}
+          </p>
+        )}
 
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white transition hover:bg-primary-dark disabled:opacity-60"
+          className="btn-primary w-full py-2.5 text-sm hover:btn-primary-hover disabled:opacity-60"
         >
           {busy ? "Creating…" : "Create account"}
         </button>

@@ -32,7 +32,10 @@ export default function LoginPage() {
       footer={
         <>
           No account yet?{" "}
-          <Link href="/register" className="text-primary underline">
+          <Link
+            href="/register"
+            className="font-medium text-primary-dark underline underline-offset-2"
+          >
             Create one
           </Link>
         </>
@@ -54,12 +57,16 @@ export default function LoginPage() {
           autoComplete="current-password"
         />
 
-        {error && <p className="text-sm text-rose-700">{error}</p>}
+        {error && (
+          <p className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
 
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white transition hover:bg-primary-dark disabled:opacity-60"
+          className="btn-primary w-full py-2.5 text-sm hover:btn-primary-hover disabled:opacity-60"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>
@@ -92,7 +99,7 @@ function Field({
         value={value}
         autoComplete={autoComplete}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-foreground"
+        className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
       />
     </label>
   );

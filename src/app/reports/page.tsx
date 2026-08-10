@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import PageHeader from "@/components/PageHeader";
+import { ErrorBanner } from "@/components/Feedback";
 import { formatMoney } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
 
@@ -39,27 +40,28 @@ export default function ReportsPage() {
     <>
       <PageHeader title="Reports" subtitle="All-time performance" />
 
-      <main className="flex-1 space-y-6 p-6">
-        {error && (
-          <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </p>
-        )}
-        {loading && <p className="text-sm text-muted">Loading…</p>}
+      <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
+        {error && <ErrorBanner message={error} />}
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
           <Stat
             label="Total Revenue"
             value={formatMoney(report.totalRevenue, report.currency)}
+            loading={loading}
           />
-          <Stat label="Bookings" value={String(report.totalBookings)} />
+          <Stat
+            label="Bookings"
+            value={String(report.totalBookings)}
+            loading={loading}
+          />
           <Stat
             label="Average Ticket"
             value={formatMoney(report.avgTicket, report.currency)}
+            loading={loading}
           />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
           <Breakdown
             title="Top Services"
             rows={report.byService}
@@ -76,13 +78,25 @@ export default function ReportsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  loading,
+}: {
+  label: string;
+  value: string;
+  loading?: boolean;
+}) {
   return (
-    <div className="card px-5 py-4">
-      <p className="text-xs uppercase tracking-wide text-muted">
+    <div className="card-interactive hover:card-interactive-hover px-5 py-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">
         {label}
       </p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      {loading ? (
+        <div className="skeleton mt-2 h-8 w-24" />
+      ) : (
+        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      )}
     </div>
   );
 }

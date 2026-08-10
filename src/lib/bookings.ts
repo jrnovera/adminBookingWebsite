@@ -73,6 +73,14 @@ export async function rescheduleBooking(
     booking_time?: string;
     staff_id?: string;
     staff_name?: string;
+    service_id?: string;
+    service_name?: string;
+    duration_minutes?: number;
+    price?: number;
+    subtotal?: number;
+    tax?: number;
+    total?: number;
+    discount?: number;
   }
 ) {
   const supabase = getSupabaseClient();

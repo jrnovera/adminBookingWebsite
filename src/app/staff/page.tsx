@@ -5,6 +5,10 @@ import PageHeader from "@/components/PageHeader";
 import Avatar from "@/components/Avatar";
 import StaffForm from "@/components/StaffForm";
 import TimeOffPanel from "@/components/TimeOffPanel";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { EmptyState, ErrorBanner } from "@/components/Feedback";
+import { IconPlus, IconScissors } from "@/components/Icons";
+import { useToast } from "@/components/Toast";
 import {
   deleteStaff,
   fetchStaff,
@@ -14,12 +18,14 @@ import {
 import type { Staff, StaffTimeOff } from "@/lib/types";
 
 export default function StaffPage() {
+  const toast = useToast();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Staff | "new" | null>(null);
   const [managingTimeOff, setManagingTimeOff] = useState<Staff | null>(null);
+  const [removing, setRemoving] = useState<Staff | null>(null);
 
   const load = useCallback(() => {
     Promise.all([fetchStaff(), fetchTimeOff()]).then(
@@ -38,13 +44,17 @@ export default function StaffPage() {
 
   useEffect(load, [load]);
 
-  async function handleDelete(member: Staff) {
-    if (!confirm(`Remove ${member.name} from the team?`)) return;
+  async function handleDelete() {
+    if (!removing) return;
     try {
-      await deleteStaff(member.id);
+      await deleteStaff(removing.id);
+      toast.success("Staff removed", `${removing.name} was removed from the team.`);
+      setRemoving(null);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      const message = err instanceof Error ? err.message : "Delete failed";
+      setError(message);
+      toast.error("Delete failed", message);
     }
   }
 
@@ -56,27 +66,40 @@ export default function StaffPage() {
         action={
           <button
             onClick={() => setEditing("new")}
-            className="btn-primary px-4 py-2 text-sm hover:opacity-90"
+            className="btn-primary flex items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover"
           >
-            + Add Staff
+            <IconPlus size={15} />
+            Add Staff
           </button>
         }
       />
 
-      <main className="flex-1 space-y-4 p-6">
-        {error && (
-          <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </p>
-        )}
+      <main className="flex-1 space-y-4 p-4 sm:p-6">
+        {error && <ErrorBanner message={error} />}
 
         {loading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="card space-y-3 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="skeleton h-11 w-11 rounded-full" />
+                  <div className="space-y-1.5">
+                    <div className="skeleton h-4 w-28" />
+                    <div className="skeleton h-3 w-20" />
+                  </div>
+                </div>
+                <div className="skeleton h-3 w-full" />
+                <div className="skeleton h-3 w-4/5" />
+              </div>
+            ))}
+          </div>
         ) : staff.length === 0 ? (
-          <div className="card border-dashed p-10 text-center">
-            <p className="text-sm text-muted">
-              No staff yet. Add your first team member to start scheduling.
-            </p>
+          <div className="card border-dashed">
+            <EmptyState
+              icon={<IconScissors size={22} />}
+              title="No staff yet"
+              detail="Add your first team member to start scheduling."
+            />
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -87,20 +110,18 @@ export default function StaffPage() {
               return (
                 <article
                   key={member.id}
-                  className="card p-5"
+                  className="card-interactive hover:card-interactive-hover p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Avatar name={member.name} src={member.avatar_url} size={44} />
                       <div>
                         <p className="font-medium">{member.name}</p>
-                        <p className="text-sm text-muted">
-                          {member.role}
-                        </p>
+                        <p className="text-sm text-muted">{member.role}</p>
                       </div>
                     </div>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs ${
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
                         member.active
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-foreground/10 text-muted"
@@ -142,8 +163,8 @@ export default function StaffPage() {
                       Time off
                     </button>
                     <button
-                      onClick={() => handleDelete(member)}
-                      className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50"
+                      onClick={() => setRemoving(member)}
+                      className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs text-rose-700 transition hover:bg-rose-50"
                     >
                       Remove
                     </button>
@@ -160,8 +181,10 @@ export default function StaffPage() {
           staff={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => {
+            const wasNew = editing === "new";
             setEditing(null);
             load();
+            toast.success(wasNew ? "Staff member added" : "Staff member updated");
           }}
         />
       )}
@@ -173,7 +196,27 @@ export default function StaffPage() {
             (entry) => entry.staff_id === managingTimeOff.id
           )}
           onClose={() => setManagingTimeOff(null)}
-          onChanged={load}
+          onChanged={() => {
+            load();
+            toast.success("Time off updated");
+          }}
+        />
+      )}
+
+      {removing && (
+        <ConfirmDialog
+          title="Remove staff member?"
+          message={
+            <>
+              <span className="font-medium text-foreground">
+                {removing.name}
+              </span>{" "}
+              will be removed from your team and unassigned from the calendar.
+            </>
+          }
+          confirmLabel="Remove"
+          onClose={() => setRemoving(null)}
+          onConfirm={handleDelete}
         />
       )}
     </>

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import Avatar from "@/components/Avatar";
+import StatusBadge from "@/components/StatusBadge";
 import WeekTimeGrid from "@/components/WeekTimeGrid";
+import StaffDayGrid from "@/components/StaffDayGrid";
 import BookingDrawer from "@/components/BookingDrawer";
 import NewBookingModal from "@/components/NewBookingModal";
 import BlockTimeModal from "@/components/BlockTimeModal";
@@ -20,7 +22,18 @@ import {
 } from "@/lib/format";
 import { fetchStaff, fetchTimeOff, isStaffOffOn } from "@/lib/staff";
 import { useShop } from "@/lib/shop";
+import { useAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 import { useBookings } from "@/lib/useBookings";
+import { useVisibleDayCount } from "@/lib/useMediaQuery";
+import { useToast } from "@/components/Toast";
+import {
+  IconBan,
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconPlus,
+} from "@/components/Icons";
 import type { Booking, Staff, StaffBlock, StaffTimeOff } from "@/lib/types";
 
 const ALL = "__all";
@@ -29,22 +42,34 @@ const UNASSIGNED = "__unassigned";
 export default function CalendarPage() {
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
+  const toast = useToast();
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
+  const dayCount = useVisibleDayCount();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
   const [blocks, setBlocks] = useState<StaffBlock[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>(ALL);
   const [cursor, setCursor] = useState(() => new Date());
+  const [view, setView] = useState<"day" | "week">("day");
   const [moveError, setMoveError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Booking | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<StaffBlock | null>(null);
+  const [overlap, setOverlap] = useState<{
+    bookings: Booking[];
+    startMinutes: number;
+  } | null>(null);
   const [moveConfirm, setMoveConfirm] = useState<{
     booking: Booking;
     dateKey: string;
     startMinutes: number;
+    staffId?: string;
+    staffName?: string;
   } | null>(null);
   const [creating, setCreating] = useState<{
     dateKey: string;
     minutes: number;
+    staffId?: string;
   } | null>(null);
   const [blocking, setBlocking] = useState<{
     dateKey: string;
@@ -67,10 +92,12 @@ export default function CalendarPage() {
     reloadBlocks();
   }, [reloadBlocks]);
 
+  // A full week has room on a desktop; narrower screens show three days or a
+  // single day anchored on the cursor rather than squeezing seven columns.
   const weekDays = useMemo(() => {
-    const start = startOfWeek(cursor);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
-  }, [cursor]);
+    const start = dayCount === 7 ? startOfWeek(cursor) : cursor;
+    return Array.from({ length: dayCount }, (_, index) => addDays(start, index));
+  }, [cursor, dayCount]);
 
   // Bookings carry free-text staff ids from the public site; resolve them onto
   // real staff rows by id, then by name, so filtering lines up.
@@ -183,18 +210,41 @@ export default function CalendarPage() {
       try {
         await rescheduleBooking(booking.id, changes);
         reload();
+        const toDate = changes.booking_date ?? booking.booking_date;
+        const toTime = changes.booking_time ?? booking.booking_time;
+        const reassigned =
+          changes.staff_name && changes.staff_name !== booking.staff_name;
+        toast.success(
+          "Appointment rescheduled",
+          `${booking.full_name} · ${formatDateLong(toDate)} at ${toTime}`
+        );
+        logActivity({
+          actor,
+          entity: "booking",
+          entity_id: booking.id,
+          action: reassigned ? "reassigned" : "rescheduled",
+          summary: reassigned
+            ? `Moved ${booking.full_name} to ${changes.staff_name}`
+            : `Rescheduled ${booking.full_name}`,
+          detail: `${formatDateLong(booking.booking_date)} ${
+            booking.booking_time
+          } → ${formatDateLong(toDate)} ${toTime}${
+            reassigned ? ` · ${booking.staff_name} → ${changes.staff_name}` : ""
+          }`,
+        });
       } catch (err) {
         setPending((current) => {
           const next = { ...current };
           delete next[booking.id];
           return next;
         });
-        setMoveError(
-          err instanceof Error ? err.message : "Could not move appointment"
-        );
+        const message =
+          err instanceof Error ? err.message : "Could not move appointment";
+        setMoveError(message);
+        toast.error("Reschedule failed", message);
       }
     },
-    [reload]
+    [reload, toast, actor]
   );
 
   // Dragging only proposes a move; nothing is written until the admin
@@ -211,14 +261,67 @@ export default function CalendarPage() {
     []
   );
 
-  const rangeLabel = `${weekDays[0].toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })} – ${weekDays[6].toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })}`;
+  // Day view adds a second axis: dragging sideways reassigns the appointment
+  // to another team member, so the confirm dialog has to spell that out too.
+  const handleStaffMove = useCallback(
+    (
+      booking: Booking,
+      dateKey: string,
+      startMinutes: number,
+      staffId: string,
+      staffName: string
+    ) => {
+      const nextTime = formatMinutes(startMinutes);
+      const sameSlot =
+        dateKey === booking.booking_date && nextTime === booking.booking_time;
+      if (sameSlot && staffId === booking.staff_id) return;
+      setMoveError(null);
+      setMoveConfirm({ booking, dateKey, startMinutes, staffId, staffName });
+    },
+    []
+  );
+
+  const rangeLabel = useMemo(() => {
+    if (view === "day") {
+      return cursor.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+    const first = weekDays[0];
+    const last = weekDays[weekDays.length - 1];
+    if (weekDays.length === 1) {
+      return first.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+    return `${first.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    })} – ${last.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })}`;
+  }, [weekDays, view, cursor]);
+
+  // Day view steps a day at a time; week view by the span on screen.
+  const step = view === "day" ? 1 : dayCount;
+
+  // In day view the columns are people, so the picker narrows which people
+  // are shown rather than which bookings.
+  const dayViewStaff = useMemo(
+    () =>
+      selectedStaff === ALL
+        ? activeStaff
+        : activeStaff.filter((member) => member.id === selectedStaff),
+    [activeStaff, selectedStaff]
+  );
 
   return (
     <>
@@ -226,25 +329,48 @@ export default function CalendarPage() {
         title="Calendar"
         subtitle={rangeLabel}
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setCursor(new Date())}
-              className="btn-ghost px-3 py-1.5 text-sm hover:bg-background"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => setCursor((date) => addDays(date, -7))}
-              className="btn-ghost px-3 py-1.5 text-sm hover:bg-background"
-            >
-              ‹
-            </button>
-            <button
-              onClick={() => setCursor((date) => addDays(date, 7))}
-              className="btn-ghost px-3 py-1.5 text-sm hover:bg-background"
-            >
-              ›
-            </button>
+          <div className="flex items-center gap-2">
+            {/* Segmented today / prev / next, stepping by the visible span */}
+            <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
+              <button
+                onClick={() => setCursor((date) => addDays(date, -step))}
+                aria-label="Previous"
+                className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
+              >
+                <IconChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => setCursor(new Date())}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium transition hover:bg-background"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setCursor((date) => addDays(date, step))}
+                aria-label="Next"
+                className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
+              >
+                <IconChevronRight size={16} />
+              </button>
+            </div>
+
+            {/* Day = staff columns (Fresha style) · Week = day columns */}
+            <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
+              {(["day", "week"] as const).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => setView(option)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition ${
+                    view === option
+                      ? "bg-foreground text-white shadow-sm"
+                      : "text-muted hover:bg-background hover:text-foreground"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+
             <input
               type="date"
               aria-label="Jump to date"
@@ -256,29 +382,35 @@ export default function CalendarPage() {
                   .map(Number);
                 setCursor(new Date(year, month - 1, day));
               }}
-              className="btn-ghost px-3 py-1.5 text-sm hover:bg-background"
+              className="btn-ghost shrink-0 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background"
             />
+
             <button
               onClick={() =>
-                setBlocking({ dateKey: toDateKey(new Date()), minutes: dayStart })
+                setBlocking({ dateKey: toDateKey(cursor), minutes: dayStart })
               }
-              className="btn-ghost px-3 py-1.5 text-sm hover:bg-background"
+              className="btn-ghost flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background"
             >
-              + Block time
+              <IconBan size={15} />
+              <span className="hidden sm:inline">Block time</span>
             </button>
+
             <button
               onClick={() =>
-                setCreating({ dateKey: toDateKey(new Date()), minutes: dayStart })
+                setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
               }
-              className="btn-primary px-4 py-2 text-sm hover:opacity-90"
+              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover"
             >
-              + New Appointment
+              <IconPlus size={15} />
+              <span className="whitespace-nowrap">
+                New<span className="hidden sm:inline"> Appointment</span>
+              </span>
             </button>
           </div>
         }
       />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 sm:p-6">
         {error && (
           <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
@@ -306,36 +438,67 @@ export default function CalendarPage() {
           </p>
         )}
 
-        <p className="text-xs text-muted">
-          Drag an appointment to another day or time to reschedule.
-          Double-click an empty slot to book.
+        {/* Drag-and-drop only exists on pointer devices, so the hint is too. */}
+        <p className="hidden items-center gap-2 text-xs text-muted sm:flex">
+          <span className="rounded-md bg-foreground/[0.06] px-1.5 py-0.5 font-medium">
+            Tip
+          </span>
+          {view === "day"
+            ? "Drag an appointment to another time or team member to reassign it · Double-click an empty slot to book."
+            : "Drag an appointment to another day or time to reschedule · Double-click an empty slot to book."}
         </p>
 
-        <WeekTimeGrid
-          days={weekDays}
-          bookings={visible}
-          blocks={[...visibleBlocks, ...breakBlocks]}
-          dayStart={dayStart}
-          dayEnd={dayEnd}
-          daysOff={daysOff}
-          onMove={handleMove}
-          onSelect={setSelected}
-          onCreate={(dateKey, minutes) => setCreating({ dateKey, minutes })}
-          onSelectBlock={(block) => {
-            // Shop-break bands are derived from Settings, not real rows.
-            if (block.id.startsWith("break-")) return;
-            setSelectedBlock(block);
-          }}
-        />
+        {view === "day" ? (
+          <StaffDayGrid
+            date={cursor}
+            staff={dayViewStaff}
+            bookings={resolved}
+            blocks={[...blocks, ...breakBlocks]}
+            timeOff={timeOff}
+            dayStart={dayStart}
+            dayEnd={dayEnd}
+            onMove={handleStaffMove}
+            onSelect={setSelected}
+            onCreate={(dateKey, minutes, staffId) =>
+              setCreating({ dateKey, minutes, staffId })
+            }
+            onSelectBlock={(block) => {
+              if (block.id.startsWith("break-")) return;
+              setSelectedBlock(block);
+            }}
+          />
+        ) : (
+          <WeekTimeGrid
+            days={weekDays}
+            bookings={visible}
+            blocks={[...visibleBlocks, ...breakBlocks]}
+            dayStart={dayStart}
+            dayEnd={dayEnd}
+            daysOff={daysOff}
+            onMove={handleMove}
+            onSelect={setSelected}
+            onCreate={(dateKey, minutes) => setCreating({ dateKey, minutes })}
+            onSelectBlock={(block) => {
+              // Shop-break bands are derived from Settings, not real rows.
+              if (block.id.startsWith("break-")) return;
+              setSelectedBlock(block);
+            }}
+            onSelectGroup={(group, startMinutes) =>
+              setOverlap({ bookings: group, startMinutes })
+            }
+          />
+        )}
       </main>
 
       {selected && (
         <BookingDrawer
           booking={selected}
+          staff={activeStaff}
           onClose={() => setSelected(null)}
           onChanged={() => {
             setSelected(null);
             reload();
+            toast.success("Appointment updated");
           }}
         />
       )}
@@ -343,13 +506,23 @@ export default function CalendarPage() {
       {creating && (
         <NewBookingModal
           staff={activeStaff}
-          defaultStaffId={currentStaff?.id ?? null}
+          defaultStaffId={creating.staffId ?? currentStaff?.id ?? null}
           defaultDate={creating.dateKey}
           defaultMinutes={creating.minutes}
           onClose={() => setCreating(null)}
-          onCreated={() => {
+          onCreated={(created) => {
             setCreating(null);
             reload();
+            toast.success("Appointment booked", "It is now on the calendar.");
+            logActivity({
+              actor,
+              entity: "booking",
+              action: "created",
+              summary: `Booked ${created.clientName}`,
+              detail: `${created.serviceName} · ${created.staffName} · ${formatDateLong(
+                created.date
+              )} ${created.time}`,
+            });
           }}
         />
       )}
@@ -364,6 +537,14 @@ export default function CalendarPage() {
           onCreated={() => {
             setBlocking(null);
             reloadBlocks();
+            toast.success("Time blocked", "That slot is no longer bookable.");
+            logActivity({
+              actor,
+              entity: "block",
+              action: "blocked",
+              summary: "Blocked time on the calendar",
+              detail: formatDateLong(blocking.dateKey),
+            });
           }}
         />
       )}
@@ -394,20 +575,41 @@ export default function CalendarPage() {
                   {formatMinutes(moveConfirm.startMinutes)}
                 </span>
               </div>
+              {moveConfirm.staffName &&
+                moveConfirm.staffId !== moveConfirm.booking.staff_id && (
+                  <div className="mt-1 flex justify-between gap-3 font-semibold">
+                    <span className="font-normal text-muted">Staff</span>
+                    <span>
+                      {moveConfirm.booking.staff_name} → {moveConfirm.staffName}
+                    </span>
+                  </div>
+                )}
             </div>
 
             <div className="flex flex-col gap-2 pt-1">
               <button
                 onClick={() => {
+                  const reassigning =
+                    moveConfirm.staffId &&
+                    moveConfirm.staffId !== moveConfirm.booking.staff_id;
                   applyMove(moveConfirm.booking, {
                     booking_date: moveConfirm.dateKey,
                     booking_time: formatMinutes(moveConfirm.startMinutes),
+                    ...(reassigning
+                      ? {
+                          staff_id: moveConfirm.staffId,
+                          staff_name: moveConfirm.staffName,
+                        }
+                      : {}),
                   });
                   setMoveConfirm(null);
                 }}
                 className="btn-primary py-2.5 text-sm hover:opacity-90"
               >
-                {moveConfirm.dateKey === moveConfirm.booking.booking_date
+                {moveConfirm.staffId &&
+                moveConfirm.staffId !== moveConfirm.booking.staff_id
+                  ? "Yes, move & reassign"
+                  : moveConfirm.dateKey === moveConfirm.booking.booking_date
                   ? "Yes, change the time"
                   : "Yes, change date & time"}
               </button>
@@ -438,6 +640,46 @@ export default function CalendarPage() {
         </Modal>
       )}
 
+      {overlap && (
+        <Modal
+          title={`${overlap.bookings.length} appointments at ${formatMinutes(
+            overlap.startMinutes
+          )}`}
+          onClose={() => setOverlap(null)}
+        >
+          <ul className="divide-y divide-line">
+            {overlap.bookings.map((booking) => (
+              <li key={booking.id}>
+                <button
+                  onClick={() => {
+                    setOverlap(null);
+                    setSelected(booking);
+                  }}
+                  className="flex w-full items-start justify-between gap-3 py-3 text-left transition hover:bg-background"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {booking.full_name}
+                    </p>
+                    <p className="truncate text-xs text-muted">
+                      {booking.service_name} · {booking.staff_name}
+                    </p>
+                    <p className="mt-0.5 text-xs tabular-nums text-muted">
+                      {booking.booking_time} · {booking.duration_minutes} min
+                    </p>
+                  </div>
+                  <StatusBadge status={booking.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="pt-3 text-xs text-muted">
+            Select an appointment to open it, reschedule it or change who it is
+            assigned to.
+          </p>
+        </Modal>
+      )}
+
       {selectedBlock && (
         <RemoveBlockModal
           block={selectedBlock}
@@ -447,8 +689,20 @@ export default function CalendarPage() {
           }
           onClose={() => setSelectedBlock(null)}
           onRemoved={() => {
+            const removed = selectedBlock;
             setSelectedBlock(null);
             reloadBlocks();
+            toast.success("Block removed", "The slot is bookable again.");
+            logActivity({
+              actor,
+              entity: "block",
+              entity_id: removed.id,
+              action: "unblocked",
+              summary: "Removed a blocked slot",
+              detail: `${formatDateLong(removed.block_date)} · ${formatMinutes(
+                removed.start_minutes
+              )}–${formatMinutes(removed.end_minutes)}`,
+            });
           }}
         />
       )}
@@ -568,15 +822,18 @@ function StaffDropdown({
             </span>
           )}
         </span>
-        <span className={`text-muted transition ${open ? "rotate-180" : ""}`}>
-          ⌄
-        </span>
+        <IconChevronDown
+          size={16}
+          className={`shrink-0 text-muted transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        />
       </button>
 
       {open && (
         <ul
           role="listbox"
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-line bg-surface shadow-lg"
+          className="absolute z-40 mt-1 max-h-80 w-full overflow-y-auto overflow-x-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
         >
           <li>
             <button

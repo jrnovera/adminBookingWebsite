@@ -21,7 +21,13 @@ export default function NewBookingModal({
   defaultDate: string;
   defaultMinutes: number;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (created: {
+    clientName: string;
+    serviceName: string;
+    staffName: string;
+    date: string;
+    time: string;
+  }) => void;
 }) {
   const { settings } = useShop();
   const [serviceId, setServiceId] = useState(services[0].id);
@@ -74,7 +80,13 @@ export default function NewBookingModal({
         status: "confirmed",
         is_paid: markPaid,
       });
-      onCreated();
+      onCreated({
+        clientName: fullName.trim(),
+        serviceName: service.name,
+        staffName: member.name,
+        date,
+        time,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create booking");
       setBusy(false);
