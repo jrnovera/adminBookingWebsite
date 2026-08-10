@@ -330,6 +330,21 @@ export default function CalendarPage() {
         subtitle={rangeLabel}
         action={
           <div className="flex items-center gap-2">
+            {/* Primary action leads on mobile so it's reachable without
+                scrolling the toolbar; falls back to trailing on larger
+                screens where everything already fits. */}
+            <button
+              onClick={() =>
+                setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
+              }
+              className="btn-primary order-first flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover sm:order-none"
+            >
+              <IconPlus size={15} />
+              <span className="whitespace-nowrap">
+                New<span className="hidden sm:inline"> Appointment</span>
+              </span>
+            </button>
+
             {/* Segmented today / prev / next, stepping by the visible span */}
             <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
               <button
@@ -393,18 +408,6 @@ export default function CalendarPage() {
             >
               <IconBan size={15} />
               <span className="hidden sm:inline">Block time</span>
-            </button>
-
-            <button
-              onClick={() =>
-                setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
-              }
-              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover"
-            >
-              <IconPlus size={15} />
-              <span className="whitespace-nowrap">
-                New<span className="hidden sm:inline"> Appointment</span>
-              </span>
             </button>
           </div>
         }

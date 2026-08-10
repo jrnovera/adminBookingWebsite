@@ -133,10 +133,13 @@ export default function StaffDayGrid({
     );
   }
 
-  // Few people: fill the width. Many: keep columns readable and scroll.
+  // Few people: fill the available width. Many: fixed width and scroll.
+  // Either way a column never shrinks below a legible size — on a phone
+  // that means even 3-4 staff correctly falls back to horizontal scroll
+  // instead of squeezing avatars and names into unreadable slivers.
   const wide = staff.length <= 5;
   const columnClass = wide
-    ? "min-w-0 flex-1"
+    ? "min-w-[7rem] flex-1"
     : "w-[11rem] shrink-0";
 
   return (

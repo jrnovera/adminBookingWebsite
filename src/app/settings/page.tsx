@@ -147,7 +147,7 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Business and account configuration" />
 
-      <main className="flex-1 space-y-6 p-6">
+      <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
         {loading ? (
           <p className="text-sm text-muted">Loading…</p>
         ) : (
@@ -278,7 +278,7 @@ export default function SettingsPage() {
               </div>
 
               <Status status={shopStatus} />
-              <button className="btn-primary px-5 py-2.5 text-sm hover:opacity-90">
+              <button className="btn-primary w-full px-5 py-2.5 text-sm hover:btn-primary-hover sm:w-auto">
                 Save changes
               </button>
             </form>
@@ -298,7 +298,7 @@ export default function SettingsPage() {
               required
             />
             <Status status={emailStatus} />
-            <button className="btn-primary px-5 py-2.5 text-sm hover:opacity-90">
+            <button className="btn-primary w-full px-5 py-2.5 text-sm hover:btn-primary-hover sm:w-auto">
               Update email
             </button>
           </form>
@@ -323,7 +323,7 @@ export default function SettingsPage() {
               />
             </div>
             <Status status={passwordStatus} />
-            <button className="btn-primary px-5 py-2.5 text-sm hover:opacity-90">
+            <button className="btn-primary w-full px-5 py-2.5 text-sm hover:btn-primary-hover sm:w-auto">
               Update password
             </button>
           </form>
@@ -358,7 +358,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="card max-w-2xl p-6">
+    <section className="card max-w-2xl p-5 sm:p-6">
       <h2 className="text-base font-semibold">{title}</h2>
       <p className="mb-5 mt-0.5 text-sm text-muted">{description}</p>
       {children}
