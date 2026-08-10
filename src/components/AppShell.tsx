@@ -33,11 +33,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
-      <div className="flex min-h-screen">
+      <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <MobileNav open={navOpen} onClose={() => setNavOpen(false)} />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* This column owns the scrollbar — the rail and topbar stay put. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <Topbar onOpenNav={() => setNavOpen(true)} />
           {children}
         </div>

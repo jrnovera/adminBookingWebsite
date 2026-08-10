@@ -41,7 +41,7 @@ export default function Sidebar() {
   return (
     <aside
       data-collapsed={collapsed}
-      className={`hidden shrink-0 flex-col bg-rail lg:flex ${
+      className={`hidden h-full shrink-0 flex-col bg-rail lg:flex ${
         ready ? "transition-[width] duration-300 ease-[var(--ease-out-quart)]" : ""
       } ${collapsed ? "w-[72px]" : "w-64"}`}
     >
