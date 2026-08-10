@@ -144,12 +144,17 @@ export default function StaffDayGrid({
 
   return (
     <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
+      {/* The grid owns its own scrollport (both axes). Without a bounded
+          height the browser gives this box no vertical overflow, so the
+          staff header below can never actually stick and instead slides up
+          under the page chrome. */}
+      <div className="max-h-[calc(100vh-15rem)] overflow-auto">
         <div className={wide ? "" : "min-w-max"}>
           {/* Staff header: avatar over name, like Fresha */}
           <div className="sticky top-0 z-20 flex border-b border-line bg-surface">
+            {/* Pinned left so the corner stays opaque while columns scroll. */}
             <div
-              className="shrink-0 border-r border-line"
+              className="sticky left-0 z-10 shrink-0 border-r border-line bg-surface"
               style={{ width: AXIS_WIDTH }}
               aria-hidden="true"
             />
@@ -176,14 +181,21 @@ export default function StaffDayGrid({
 
           {/* Time axis + one column per staff member */}
           <div className="flex">
+            {/* Pinned left so the hour labels survive horizontal scrolling —
+                on a phone the staff columns always overflow. */}
             <div
-              className="relative shrink-0 border-r border-line bg-surface-2"
+              className="sticky left-0 z-10 shrink-0 border-r border-line bg-surface-2"
               style={{ width: AXIS_WIDTH, height: gridHeight }}
             >
-              {hourMarks.map((minutes) => (
+              {hourMarks.map((minutes, index) => (
                 <span
                   key={minutes}
-                  className="absolute right-2 -translate-y-1/2 text-[11px] font-medium tabular-nums text-muted"
+                  className={`absolute right-2 text-[11px] font-medium tabular-nums text-muted ${
+                    // The first mark sits flush with the grid's top edge —
+                    // centering it would push half the label above the
+                    // boundary, under the sticky header, and clip it.
+                    index === 0 ? "" : "-translate-y-1/2"
+                  }`}
                   style={{
                     top: ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
                   }}

@@ -15,11 +15,15 @@ import {
   stockStyles,
   updateProduct,
 } from "@/lib/inventory";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 export default function InventoryPage() {
   const toast = useToast();
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +79,14 @@ export default function InventoryPage() {
     );
     try {
       await updateProduct(product.id, { stock: next });
+      logActivity({
+        actor,
+        entity: "product",
+        entity_id: product.id,
+        action: "stock-adjusted",
+        summary: `Adjusted stock for ${product.name}`,
+        detail: `${product.stock} → ${next}`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Stock update failed";
       setError(message);
@@ -88,6 +100,13 @@ export default function InventoryPage() {
     try {
       await deleteProduct(removing.id);
       toast.success("Product deleted", `${removing.name} was removed.`);
+      logActivity({
+        actor,
+        entity: "product",
+        entity_id: removing.id,
+        action: "deleted",
+        summary: `Deleted product ${removing.name}`,
+      });
       setRemoving(null);
       load();
     } catch (err) {
@@ -130,7 +149,7 @@ export default function InventoryPage() {
       <main className="flex-1 space-y-4 p-4 sm:p-6">
         {error && <ErrorBanner message={error} />}
 
-        <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
           <Stat label="Stock Value (cost)" value={formatMoney(summary.value)} />
           <Stat
             label="Low Stock"
@@ -353,11 +372,13 @@ function Stat({
       ? "text-rose-700"
       : "text-foreground";
   return (
-    <div className="card px-5 py-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">
+    <div className="card px-4 py-3.5 sm:px-5 sm:py-4">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted sm:text-xs">
         {label}
       </p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${toneClass}`}>
+      <p
+        className={`mt-1 truncate text-xl font-semibold tabular-nums sm:text-2xl ${toneClass}`}
+      >
         {value}
       </p>
     </div>

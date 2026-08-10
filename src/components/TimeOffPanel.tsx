@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import { addTimeOff, deleteTimeOff } from "@/lib/staff";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import { formatDateLong, toDateKey } from "@/lib/format";
 import type { Staff, StaffTimeOff } from "@/lib/types";
 
@@ -23,6 +25,8 @@ export default function TimeOffPanel({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
 
   async function handleAdd(event: React.FormEvent) {
     event.preventDefault();
@@ -40,6 +44,14 @@ export default function TimeOffPanel({
         end_date: endDate,
         reason: reason.trim() || null,
       });
+      logActivity({
+        actor,
+        entity: "time_off",
+        entity_id: staff.id,
+        action: "created",
+        summary: `Added time off for ${staff.name}`,
+        detail: `${formatDateLong(startDate)} – ${formatDateLong(endDate)}`,
+      });
       setReason("");
       onChanged();
     } catch (err) {
@@ -52,6 +64,13 @@ export default function TimeOffPanel({
   async function handleRemove(id: string) {
     try {
       await deleteTimeOff(id);
+      logActivity({
+        actor,
+        entity: "time_off",
+        entity_id: staff.id,
+        action: "deleted",
+        summary: `Removed time off for ${staff.name}`,
+      });
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove entry");

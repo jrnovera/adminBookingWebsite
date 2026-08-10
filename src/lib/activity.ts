@@ -4,8 +4,11 @@ export type ActivityEntity =
   | "booking"
   | "block"
   | "staff"
+  | "time_off"
   | "product"
   | "promo"
+  | "service"
+  | "service_category"
   | "settings";
 
 export type Activity = {
@@ -66,11 +69,12 @@ function writeLocal(entries: Activity[]) {
  * feature still works before migration 009 has been applied.
  */
 export async function logActivity(input: ActivityInput): Promise<void> {
+  const hasRandomUUID =
+    typeof crypto !== "undefined" && "randomUUID" in crypto;
   const entry: Activity = {
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: hasRandomUUID
+      ? crypto.randomUUID()
+      : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     created_at: new Date().toISOString(),
     actor: input.actor ?? null,
     entity: input.entity,
@@ -86,14 +90,23 @@ export async function logActivity(input: ActivityInput): Promise<void> {
   if (tableMissing) return;
 
   try {
-    const { error } = await getSupabaseClient().from("activity_log").insert({
-      actor: entry.actor,
-      entity: entry.entity,
-      entity_id: entry.entity_id,
-      action: entry.action,
-      summary: entry.summary,
-      detail: entry.detail,
-    });
+    // Reuse the locally generated id (when it's a real uuid — the "local-…"
+    // fallback isn't one and would fail the column type) so the remote row
+    // and the local copy above are recognized as the same entry when
+    // fetchActivity merges them — otherwise both survive and the timeline
+    // shows every action twice.
+    const { error } = await getSupabaseClient()
+      .from("activity_log")
+      .insert({
+        ...(hasRandomUUID ? { id: entry.id } : {}),
+        created_at: entry.created_at,
+        actor: entry.actor,
+        entity: entry.entity,
+        entity_id: entry.entity_id,
+        action: entry.action,
+        summary: entry.summary,
+        detail: entry.detail,
+      });
     if (error) {
       // PGRST205 = table not in the schema cache (migration not applied).
       if (error.code === "PGRST205" || error.code === "42P01") {

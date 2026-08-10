@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import { createPromo, updatePromo } from "@/lib/promos";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import type { Promo } from "@/lib/types";
 
 export default function PromoForm({
@@ -32,6 +34,8 @@ export default function PromoForm({
   const [active, setActive] = useState(promo?.active ?? true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -58,6 +62,13 @@ export default function PromoForm({
     try {
       if (promo) await updatePromo(promo.id, payload);
       else await createPromo(payload);
+      logActivity({
+        actor,
+        entity: "promo",
+        entity_id: promo?.id ?? null,
+        action: promo ? "edited" : "created",
+        summary: `${promo ? "Edited" : "Created"} promo ${payload.code}`,
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");

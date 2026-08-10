@@ -10,12 +10,14 @@ import {
   updatePassword,
 } from "@/lib/settings";
 import { uploadImage } from "@/lib/storage";
+import { logActivity } from "@/lib/activity";
 import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
 
 export default function SettingsPage() {
   const { session } = useAuth();
+  const actor = session?.user.email ?? null;
   const { reload } = useShop();
 
   const [shopName, setShopName] = useState("");
@@ -94,6 +96,19 @@ export default function SettingsPage() {
       });
       reload();
       setShopStatus({ kind: "ok", message: "Business details saved." });
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: "Updated business settings",
+        detail: `Hours ${formatMinutes(openMinutes)}–${formatMinutes(
+          closeMinutes
+        )}${
+          hasBreak
+            ? ` · Break ${formatMinutes(breakStart)}–${formatMinutes(breakEnd)}`
+            : ""
+        } · Tax ${taxRate}%`,
+      });
     } catch (err) {
       setShopStatus({
         kind: "error",
@@ -112,6 +127,13 @@ export default function SettingsPage() {
       setEmailStatus({
         kind: "ok",
         message: "Check your inbox to confirm the new address.",
+      });
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: "Requested account email change",
+        detail: accountEmail.trim(),
       });
     } catch (err) {
       setEmailStatus({
@@ -135,6 +157,12 @@ export default function SettingsPage() {
       setPassword("");
       setConfirm("");
       setPasswordStatus({ kind: "ok", message: "Password updated." });
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: "Changed account password",
+      });
     } catch (err) {
       setPasswordStatus({
         kind: "error",

@@ -42,6 +42,7 @@ export type Client = {
   email: string;
   full_name: string;
   mobile: string;
+  address: string | null;
   visits: number;
   totalSpent: number;
   firstVisit: string;
@@ -107,6 +108,31 @@ export type Promo = {
   usage_limit: number | null;
   times_used: number;
   active: boolean;
+};
+
+export type ServiceCategory = {
+  id: string;
+  created_at: string;
+  name: string;
+  name_ar: string | null;
+  image_url: string | null;
+  sort_order: number;
+  active: boolean;
+};
+
+export type Service = {
+  id: string;
+  created_at: string;
+  category_id: string | null;
+  name: string;
+  name_ar: string | null;
+  description: string | null;
+  duration_minutes: number;
+  price: number;
+  image_url: string | null;
+  is_package: boolean;
+  active: boolean;
+  sort_order: number;
 };
 
 export type ShopSettings = {

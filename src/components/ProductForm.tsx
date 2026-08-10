@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import { createProduct, updateProduct } from "@/lib/inventory";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import type { Product } from "@/lib/types";
 
 export default function ProductForm({
@@ -26,6 +28,8 @@ export default function ProductForm({
   const [active, setActive] = useState(product?.active ?? true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -46,6 +50,13 @@ export default function ProductForm({
     try {
       if (product) await updateProduct(product.id, payload);
       else await createProduct(payload);
+      logActivity({
+        actor,
+        entity: "product",
+        entity_id: product?.id ?? null,
+        action: product ? "edited" : "created",
+        summary: `${product ? "Edited" : "Added"} product ${payload.name}`,
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");

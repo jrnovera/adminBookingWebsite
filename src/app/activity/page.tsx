@@ -26,6 +26,8 @@ const filters = [
   { value: "staff", label: "Team" },
   { value: "product", label: "Inventory" },
   { value: "promo", label: "Promos" },
+  { value: "service", label: "Services" },
+  { value: "settings", label: "Settings" },
 ] as const;
 
 /** Icon + tint per action, so the timeline is scannable at a glance. */

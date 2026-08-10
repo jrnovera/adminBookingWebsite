@@ -173,6 +173,9 @@ export default function BookingDrawer({
             <h2 className="truncate text-lg font-semibold">{booking.full_name}</h2>
             <p className="truncate text-sm text-muted">{booking.email}</p>
             <p className="text-sm text-muted">{booking.mobile}</p>
+            {booking.address && (
+              <p className="mt-0.5 text-sm text-muted">{booking.address}</p>
+            )}
           </div>
           <button
             onClick={onClose}

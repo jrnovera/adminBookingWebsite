@@ -2,15 +2,18 @@
 
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import ClientDrawer from "@/components/ClientDrawer";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconSearch, IconUsers } from "@/components/Icons";
 import { deriveClients } from "@/lib/bookings";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
+import type { Client } from "@/lib/types";
 
 export default function ClientsPage() {
   const { bookings, loading, error } = useBookings();
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Client | null>(null);
 
   const clients = useMemo(() => {
     const all = deriveClients(bookings);
@@ -79,7 +82,8 @@ export default function ClientsPage() {
                     {clients.map((client) => (
                       <tr
                         key={client.email}
-                        className="row-hover hover:bg-background"
+                        onClick={() => setSelected(client)}
+                        className="row-hover cursor-pointer hover:bg-background"
                       >
                         <td className="px-5 py-3.5 font-medium">
                           {client.full_name}
@@ -108,7 +112,8 @@ export default function ClientsPage() {
                 {clients.map((client) => (
                   <li
                     key={client.email}
-                    className="flex flex-col gap-1.5 px-4 py-3.5 active:bg-background"
+                    onClick={() => setSelected(client)}
+                    className="flex cursor-pointer flex-col gap-1.5 px-4 py-3.5 active:bg-background"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="min-w-0 truncate font-medium">
@@ -134,6 +139,14 @@ export default function ClientsPage() {
           )}
         </div>
       </main>
+
+      {selected && (
+        <ClientDrawer
+          client={selected}
+          bookings={bookings}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </>
   );
 }

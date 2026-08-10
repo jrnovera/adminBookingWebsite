@@ -5,6 +5,8 @@ import Modal from "./Modal";
 import Avatar from "./Avatar";
 import { createStaff, updateStaff, weekdayLabels } from "@/lib/staff";
 import { uploadImage } from "@/lib/storage";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import type { Staff } from "@/lib/types";
 
 export default function StaffForm({
@@ -28,6 +30,8 @@ export default function StaffForm({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
 
   function toggleDay(day: number) {
     setDaysOff((current) =>
@@ -57,6 +61,13 @@ export default function StaffForm({
     try {
       if (staff) await updateStaff(staff.id, payload);
       else await createStaff(payload);
+      logActivity({
+        actor,
+        entity: "staff",
+        entity_id: staff?.id ?? null,
+        action: staff ? "edited" : "created",
+        summary: `${staff ? "Edited" : "Added"} team member ${payload.name}`,
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");

@@ -14,11 +14,15 @@ import {
   promoStateStyles,
   updatePromo,
 } from "@/lib/promos";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import type { Promo } from "@/lib/types";
 
 export default function PromosPage() {
   const toast = useToast();
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
   const [promos, setPromos] = useState<Promo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +58,13 @@ export default function PromosPage() {
         promo.active ? "Promo paused" : "Promo activated",
         promo.code
       );
+      logActivity({
+        actor,
+        entity: "promo",
+        entity_id: promo.id,
+        action: promo.active ? "paused" : "activated",
+        summary: `${promo.active ? "Paused" : "Activated"} promo ${promo.code}`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Update failed";
       setError(message);
@@ -67,6 +78,13 @@ export default function PromosPage() {
     try {
       await deletePromo(removing.id);
       toast.success("Promo deleted", removing.code);
+      logActivity({
+        actor,
+        entity: "promo",
+        entity_id: removing.id,
+        action: "deleted",
+        summary: `Deleted promo ${removing.code}`,
+      });
       setRemoving(null);
       load();
     } catch (err) {

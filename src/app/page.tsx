@@ -43,7 +43,9 @@ export default function DashboardPage() {
       <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
         {error && <ErrorBanner message={error} />}
 
-        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+        {/* Two-up on phones: full-width stat cards pushed the appointment
+            list ~800px down the page before anything useful was visible. */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <StatCard
             label="Today's Appointments"
             value={String(stats.todayCount)}
@@ -138,13 +140,15 @@ function StatCard({
   tone?: "default" | "primary";
 }) {
   return (
-    <div className="card-interactive hover:card-interactive-hover px-5 py-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">
+    <div className="card-interactive hover:card-interactive-hover px-4 py-3.5 sm:px-5 sm:py-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-[11px] font-medium uppercase tracking-wide text-muted sm:text-xs">
           {label}
         </p>
         <span
-          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+          // Decorative only — hidden on phones so the label gets the full
+          // card width instead of wrapping onto a third line.
+          className={`hidden h-8 w-8 shrink-0 place-items-center rounded-lg sm:grid ${
             tone === "primary"
               ? "bg-primary-100 text-primary-dark"
               : "bg-foreground/[0.06] text-foreground/70"
@@ -156,7 +160,9 @@ function StatCard({
       {loading ? (
         <div className="skeleton mt-2 h-8 w-20" />
       ) : (
-        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-xl font-semibold tabular-nums sm:text-2xl">
+          {value}
+        </p>
       )}
     </div>
   );

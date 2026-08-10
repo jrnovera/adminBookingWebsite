@@ -5,6 +5,8 @@ import Modal from "./Modal";
 import { checkoutBooking } from "@/lib/bookings";
 import { fetchProducts } from "@/lib/inventory";
 import { services } from "@/lib/services";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import type { BillAddon, Booking, Product } from "@/lib/types";
 
@@ -33,6 +35,8 @@ export default function PosCheckout({
   const [method, setMethod] = useState(booking.payment_method ?? "Cash");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
 
   useEffect(() => {
     fetchProducts().then(
@@ -91,6 +95,14 @@ export default function PosCheckout({
         tax,
         total,
         payment_method: method,
+      });
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: booking.id,
+        action: "checkout",
+        summary: `Checked out ${booking.full_name}`,
+        detail: `${method} · ${formatMoney(total, currency)}`,
       });
       onPaid();
     } catch (err) {

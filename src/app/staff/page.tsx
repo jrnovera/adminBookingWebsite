@@ -15,10 +15,14 @@ import {
   fetchTimeOff,
   weekdayLabels,
 } from "@/lib/staff";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
 import type { Staff, StaffTimeOff } from "@/lib/types";
 
 export default function StaffPage() {
   const toast = useToast();
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,13 @@ export default function StaffPage() {
     try {
       await deleteStaff(removing.id);
       toast.success("Staff removed", `${removing.name} was removed from the team.`);
+      logActivity({
+        actor,
+        entity: "staff",
+        entity_id: removing.id,
+        action: "deleted",
+        summary: `Removed team member ${removing.name}`,
+      });
       setRemoving(null);
       load();
     } catch (err) {

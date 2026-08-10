@@ -44,9 +44,14 @@ export type NewBooking = {
   is_paid: boolean;
 };
 
-export async function createBooking(input: NewBooking) {
-  const { error } = await getSupabaseClient().from("bookings").insert(input);
+export async function createBooking(input: NewBooking): Promise<string> {
+  const { data, error } = await getSupabaseClient()
+    .from("bookings")
+    .insert(input)
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
+  return data.id as string;
 }
 
 export async function setBookingPaid(
@@ -130,6 +135,7 @@ export function deriveClients(bookings: Booking[]): Client[] {
         email: booking.email,
         full_name: booking.full_name,
         mobile: booking.mobile,
+        address: booking.address ?? null,
         visits: 1,
         totalSpent: Number(booking.total),
         firstVisit: booking.booking_date,
@@ -148,6 +154,7 @@ export function deriveClients(bookings: Booking[]): Client[] {
       existing.lastVisit = booking.booking_date;
       existing.full_name = booking.full_name;
       existing.mobile = booking.mobile;
+      existing.address = booking.address ?? existing.address;
     }
   }
 

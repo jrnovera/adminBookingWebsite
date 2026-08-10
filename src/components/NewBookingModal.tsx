@@ -3,7 +3,9 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import { createBooking } from "@/lib/bookings";
-import { formatMinutes } from "@/lib/format";
+import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/lib/auth";
+import { formatDateLong, formatMinutes } from "@/lib/format";
 import { services } from "@/lib/services";
 import { useShop } from "@/lib/shop";
 import type { Staff } from "@/lib/types";
@@ -30,6 +32,8 @@ export default function NewBookingModal({
   }) => void;
 }) {
   const { settings } = useShop();
+  const { session } = useAuth();
+  const actor = session?.user.email ?? null;
   const [serviceId, setServiceId] = useState(services[0].id);
   const [staffId, setStaffId] = useState(defaultStaffId ?? staff[0]?.id ?? "");
   const [date, setDate] = useState(defaultDate);
@@ -60,7 +64,7 @@ export default function NewBookingModal({
     setBusy(true);
     setError(null);
     try {
-      await createBooking({
+      const bookingId = await createBooking({
         service_id: service.id,
         service_name: service.name,
         duration_minutes: service.duration,
@@ -79,6 +83,16 @@ export default function NewBookingModal({
         notes: notes.trim() || null,
         status: "confirmed",
         is_paid: markPaid,
+      });
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: bookingId,
+        action: "created",
+        summary: `Created appointment for ${fullName.trim()}`,
+        detail: `${service.name} · ${member.name} · ${formatDateLong(
+          date
+        )} ${time}`,
       });
       onCreated({
         clientName: fullName.trim(),

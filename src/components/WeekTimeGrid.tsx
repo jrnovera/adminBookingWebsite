@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMinutes, parseTimeToMinutes, toDateKey } from "@/lib/format";
+import { IconPlus } from "./Icons";
 import type { Booking, StaffBlock } from "@/lib/types";
 
 const SLOT_MINUTES = 15;
@@ -155,7 +156,12 @@ export default function WeekTimeGrid({
 
   return (
     <div className="card overflow-hidden">
-      <div ref={scrollRef} className="overflow-x-hidden">
+      {/* Bounded so this box actually has vertical overflow — otherwise the
+          day header below can never stick and slides under the page chrome. */}
+      <div
+        ref={scrollRef}
+        className="max-h-[calc(100vh-15rem)] overflow-y-auto overflow-x-hidden"
+      >
         <div>
           {/* Day headers — sticky so the date stays visible while scrolling. */}
           <div className="sticky top-0 z-20 flex border-b border-line bg-surface/95 backdrop-blur-sm">
@@ -169,9 +175,16 @@ export default function WeekTimeGrid({
               const isToday = key === todayKey;
               const off = daysOff.includes(day.getDay());
               return (
-                <div
+                <button
                   key={key}
-                  className={`${columnClass} border-l border-line px-2 py-2.5 text-center`}
+                  type="button"
+                  onClick={() => onCreate(key, dayStart)}
+                  title={`Add an appointment on ${day.toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  })}`}
+                  className={`group/day ${columnClass} border-l border-line px-2 py-2.5 text-center transition-colors hover:bg-background`}
                 >
                   <p
                     className={`text-[10px] font-semibold uppercase tracking-wider ${
@@ -184,7 +197,7 @@ export default function WeekTimeGrid({
                     className={`mx-auto mt-1 grid h-8 w-8 place-items-center rounded-full text-sm font-semibold transition ${
                       isToday
                         ? "bg-foreground text-white shadow-sm"
-                        : "text-foreground"
+                        : "text-foreground group-hover/day:bg-foreground/[0.08]"
                     }`}
                   >
                     {day.getDate()}
@@ -194,7 +207,7 @@ export default function WeekTimeGrid({
                       Day off
                     </p>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -205,10 +218,15 @@ export default function WeekTimeGrid({
               className="relative shrink-0 border-r border-line bg-surface-2"
               style={{ width: AXIS_WIDTH, height: gridHeight }}
             >
-              {hourMarks.map((minutes) => (
+              {hourMarks.map((minutes, index) => (
                 <span
                   key={minutes}
-                  className="absolute right-2 -translate-y-1/2 text-[10px] font-medium tabular-nums text-muted"
+                  className={`absolute right-2 text-[10px] font-medium tabular-nums text-muted ${
+                    // Same fix as the day view: the first mark sits at the
+                    // grid's top edge, so centering it would clip half the
+                    // label under the sticky header above.
+                    index === 0 ? "" : "-translate-y-1/2"
+                  }`}
                   style={{
                     top: ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
                   }}
@@ -274,6 +292,39 @@ export default function WeekTimeGrid({
                       }}
                     />
                   ))}
+
+                  {/* Hover-to-add: a quiet "+" per hour, same action as the
+                      double-click shortcut, just visible so it's discoverable.
+                      Only the small button itself is clickable — the taller
+                      wrapper just reveals it on hover and passes clicks and
+                      double-clicks on its empty padding straight through. */}
+                  {hourMarks.map((minutes) => {
+                    const segmentEnd = Math.min(minutes + 60, dayEnd);
+                    if (segmentEnd <= minutes) return null;
+                    const top =
+                      ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT;
+                    const height =
+                      ((segmentEnd - minutes) / SLOT_MINUTES) * SLOT_HEIGHT;
+                    return (
+                      <div
+                        key={`add-${minutes}`}
+                        className="group/add absolute inset-x-0 z-[3] flex items-start justify-center pt-0.5"
+                        style={{ top, height }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onCreate(key, minutes);
+                          }}
+                          title={`Add appointment at ${formatMinutes(minutes)}`}
+                          className="grid h-5 w-5 place-items-center rounded-full bg-foreground text-white opacity-0 shadow-sm outline-none transition-all duration-150 group-hover/add:opacity-100 hover:scale-110 focus-visible:opacity-100"
+                        >
+                          <IconPlus size={11} />
+                        </button>
+                      </div>
+                    );
+                  })}
 
                   {/* Now line */}
                   {showNowLine && key === todayKey && (
