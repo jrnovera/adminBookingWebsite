@@ -3,19 +3,21 @@
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import PeriodFilter from "@/components/PeriodFilter";
-import ExportBar from "@/components/ExportBar";
+import Pagination from "@/components/Pagination";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
-import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
+import { IconCalendar, IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useBookings } from "@/lib/useBookings";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
-import { exportTransactionsCsv } from "@/lib/exportCsv";
+import { usePagination } from "@/lib/usePagination";
 import { deleteBooking } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import type { Booking } from "@/lib/types";
+
+const PAGE_SIZE = 10;
 
 type SortKey = "date" | "client" | "method" | "total";
 type PaidFilter = "all" | "paid" | "unpaid";
@@ -35,13 +37,22 @@ export default function TransactionsPage() {
   const [query, setQuery] = useState("");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("paid");
   const [period, setPeriod] = useState<PeriodKey>("all");
+  // A specific calendar range, picked below. Set, it overrides the quick
+  // period chips above so admins can jump to any window, not just the
+  // canned ones.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [deleting, setDeleting] = useState<Booking | null>(null);
 
+  const hasCustomRange = Boolean(dateFrom || dateTo);
+
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const bounds = resolvePeriod(period);
+    const bounds = hasCustomRange
+      ? { start: dateFrom || "0000-00-00", end: dateTo || "9999-99-99" }
+      : resolvePeriod(period);
     let list = bookings.filter(
       (b) => b.status !== "cancelled" && withinPeriod(b.booking_date, bounds)
     );
@@ -73,7 +84,12 @@ export default function TransactionsPage() {
       return cmp * sortDir;
     });
     return sorted;
-  }, [bookings, query, paidFilter, period, sortKey, sortDir]);
+  }, [bookings, query, paidFilter, period, hasCustomRange, dateFrom, dateTo, sortKey, sortDir]);
+
+  const { page, pageCount, pageItems, setPage, total } = usePagination(
+    rows,
+    PAGE_SIZE
+  );
 
   const totals = useMemo(() => {
     return rows.reduce(
@@ -144,9 +160,11 @@ export default function TransactionsPage() {
               {rows.length} transaction{rows.length === 1 ? "" : "s"} ·{" "}
               {formatMoney(totals.total, currency)} total
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300">
-              Today: {formatMoney(todayEarnings, currency)}
-            </span>
+            {period === "today" && !hasCustomRange && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300">
+                Today: {formatMoney(todayEarnings, currency)}
+              </span>
+            )}
           </span>
         }
         action={
@@ -186,10 +204,53 @@ export default function TransactionsPage() {
               </button>
             ))}
           </div>
-          <PeriodFilter value={period} onChange={setPeriod} />
+          <PeriodFilter
+            value={period}
+            onChange={(next) => {
+              setDateFrom("");
+              setDateTo("");
+              setPeriod(next);
+            }}
+          />
         </div>
 
-        <ExportBar rows={rows} allRows={bookings} onExport={exportTransactionsCsv} />
+        {/* Pick any specific window on the calendar — overrides the quick
+            chips above while a date is set. */}
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-2.5">
+          <span className="flex shrink-0 items-center gap-1.5 pl-1 text-xs font-medium text-muted">
+            <IconCalendar size={14} />
+            Custom range
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="hidden sm:inline">From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="hidden sm:inline">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+            />
+          </label>
+          {hasCustomRange && (
+            <button
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
+              className="text-xs text-primary hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
 
         <div className="overflow-hidden card">
           {loading ? (
@@ -205,7 +266,7 @@ export default function TransactionsPage() {
               {/* Phones get a card list — a 12-column ledger behind a
                   horizontal scrollbar is unreadable at 375px. */}
               <ul className="divide-y divide-line sm:hidden">
-                {rows.map((b) => (
+                {pageItems.map((b) => (
                   <li key={b.id} className="flex flex-col gap-1.5 px-4 py-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <p className="min-w-0 truncate font-medium">
@@ -306,7 +367,7 @@ export default function TransactionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((b, i) => (
+                  {pageItems.map((b, i) => (
                     <tr
                       key={b.id}
                       className={`border-b border-line ${
@@ -314,7 +375,7 @@ export default function TransactionsPage() {
                       }`}
                     >
                       <td className="border-r border-line px-3 py-2 tabular-nums text-muted">
-                        {i + 1}
+                        {(page - 1) * PAGE_SIZE + i + 1}
                       </td>
                       <td className="whitespace-nowrap border-r border-line px-3 py-2 tabular-nums">
                         {formatDateLong(b.booking_date)} · {b.booking_time}
@@ -405,6 +466,14 @@ export default function TransactionsPage() {
                 </tfoot>
               </table>
               </div>
+
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                total={total}
+                pageSize={PAGE_SIZE}
+                onChange={setPage}
+              />
             </>
           )}
         </div>

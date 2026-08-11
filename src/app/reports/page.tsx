@@ -18,10 +18,12 @@ import {
 import PageHeader from "@/components/PageHeader";
 import PeriodFilter from "@/components/PeriodFilter";
 import { ErrorBanner } from "@/components/Feedback";
-import { formatMoney, parseTimeToMinutes } from "@/lib/format";
+import { IconCalendar, IconRegister } from "@/components/Icons";
+import { formatMoney, parseTimeToMinutes, toDateKey } from "@/lib/format";
 import { periodLabels, resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { useBookings } from "@/lib/useBookings";
 import { useRequireRole } from "@/lib/useRequireRole";
+import { exportTransactionsCsv } from "@/lib/exportCsv";
 import type { BookingStatus } from "@/lib/types";
 
 // Same family as --color-primary in globals.css, plus enough extra hues to
@@ -50,8 +52,56 @@ export default function ReportsPage() {
   // history one tap away via the period filter.
   const [period, setPeriod] = useState<PeriodKey>("today");
 
+  // Jump straight to one specific month or day instead of the canned
+  // periods above — whichever was picked most recently wins, and picking
+  // either clears the quick chips' effect on the numbers below.
+  const [customMonth, setCustomMonth] = useState("");
+  const [customDate, setCustomDate] = useState("");
+  const hasCustom = Boolean(customMonth || customDate);
+
+  function monthBounds(month: string) {
+    const [year, monthNum] = month.split("-").map(Number);
+    const start = new Date(year, monthNum - 1, 1);
+    const end = new Date(year, monthNum, 0);
+    return { start: toDateKey(start), end: toDateKey(end) };
+  }
+
+  const reportBounds = useMemo(() => {
+    if (customDate) return { start: customDate, end: customDate };
+    if (customMonth) return monthBounds(customMonth);
+    return resolvePeriod(period);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customDate, customMonth, period]);
+
+  // Export range — independent of the report's own period filter above, so
+  // an admin can view "This month" on screen while exporting a completely
+  // different window, e.g. last quarter's ledger.
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const exportCount = useMemo(() => {
+    if (!exportFrom && !exportTo) return 0;
+    const bounds = {
+      start: exportFrom || "0000-00-00",
+      end: exportTo || "9999-99-99",
+    };
+    return bookings.filter(
+      (b) => b.status !== "cancelled" && withinPeriod(b.booking_date, bounds)
+    ).length;
+  }, [bookings, exportFrom, exportTo]);
+
+  function handleExport() {
+    const bounds = {
+      start: exportFrom || "0000-00-00",
+      end: exportTo || "9999-99-99",
+    };
+    const scoped = bookings.filter(
+      (b) => b.status !== "cancelled" && withinPeriod(b.booking_date, bounds)
+    );
+    exportTransactionsCsv(scoped);
+  }
+
   const report = useMemo(() => {
-    const bounds = resolvePeriod(period);
+    const bounds = reportBounds;
     const inPeriod = bookings.filter((b) => withinPeriod(b.booking_date, bounds));
     const paid = inPeriod.filter((b) => b.status !== "cancelled");
     const currency = paid[0]?.currency ?? inPeriod[0]?.currency ?? "AED";
@@ -80,7 +130,7 @@ export default function ReportsPage() {
             new Date(dateKeys[0]).getTime()) /
           86_400_000
         : 0;
-    const byHour = period === "today";
+    const byHour = customDate ? true : !hasCustom && period === "today";
     const byMonth = !byHour && spanDays > 62;
 
     const bucketKey = (booking: (typeof paid)[number]) => {
@@ -150,23 +200,135 @@ export default function ReportsPage() {
       trend,
       statusBreakdown,
     };
-  }, [bookings, period]);
+  }, [bookings, reportBounds, hasCustom, customDate, period]);
+
+  const rangeLabel = customDate
+    ? new Date(`${customDate}T00:00`).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : customMonth
+      ? new Date(`${customMonth}-01T00:00`).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        })
+      : period === "today"
+        ? "Today's"
+        : `${periodLabels[period]}`;
 
   return (
     <>
       <PageHeader
         title="Reports"
-        subtitle={
-          period === "today"
-            ? "Today's performance"
-            : `${periodLabels[period]} performance`
-        }
+        subtitle={`${rangeLabel} performance`}
       />
 
       <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
         {error && <ErrorBanner message={error} />}
 
-        <PeriodFilter value={period} onChange={setPeriod} />
+        <div className="space-y-3 rounded-2xl border border-line bg-surface-2 p-4">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Quick periods</p>
+            <PeriodFilter
+              value={period}
+              onChange={(next) => {
+                setCustomMonth("");
+                setCustomDate("");
+                setPeriod(next);
+              }}
+            />
+          </div>
+
+          <div className="border-t border-line pt-3">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Custom range</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-muted">
+                <span className="font-medium">Month:</span>
+                <input
+                  type="month"
+                  value={customMonth}
+                  onChange={(event) => {
+                    setCustomDate("");
+                    setCustomMonth(event.target.value);
+                  }}
+                  className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition-all duration-200 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06] hover:border-foreground/20"
+                />
+              </label>
+              <span className="text-muted">or</span>
+              <label className="flex items-center gap-2 text-xs text-muted">
+                <span className="font-medium">Date:</span>
+                <input
+                  type="date"
+                  value={customDate}
+                  onChange={(event) => {
+                    setCustomMonth("");
+                    setCustomDate(event.target.value);
+                  }}
+                  className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition-all duration-200 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06] hover:border-foreground/20"
+                />
+              </label>
+              {hasCustom && (
+                <button
+                  onClick={() => {
+                    setCustomMonth("");
+                    setCustomDate("");
+                  }}
+                  className="ml-auto rounded-lg bg-background px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-background/80"
+                >
+                  Clear custom
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Export ledger — pick a range on the calendar, independent of the
+            report's own period filter above. */}
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-2.5">
+          <span className="flex shrink-0 items-center gap-1.5 pl-1 text-xs font-medium text-muted">
+            <IconCalendar size={14} />
+            Export range
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="hidden sm:inline">From</span>
+            <input
+              type="date"
+              value={exportFrom}
+              onChange={(event) => setExportFrom(event.target.value)}
+              className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="hidden sm:inline">to</span>
+            <input
+              type="date"
+              value={exportTo}
+              onChange={(event) => setExportTo(event.target.value)}
+              className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+            />
+          </label>
+          {(exportFrom || exportTo) && (
+            <button
+              onClick={() => {
+                setExportFrom("");
+                setExportTo("");
+              }}
+              className="text-xs text-primary hover:underline"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={exportCount === 0}
+            className="btn-primary ml-auto flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs hover:btn-primary-hover disabled:opacity-50"
+          >
+            <IconRegister size={13} />
+            <span>Export{exportCount > 0 ? ` (${exportCount})` : ""}</span>
+          </button>
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
           <Stat

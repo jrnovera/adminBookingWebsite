@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ClickableStatusBadge from "@/components/ClickableStatusBadge";
 import HomeBadge from "@/components/HomeBadge";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconClock } from "@/components/Icons";
@@ -262,7 +263,11 @@ export default function AppointmentsPage() {
                           {formatMoney(Number(booking.total), booking.currency)}
                         </td>
                         <td className="px-5 py-3.5">
-                          <StatusBadge status={booking.status} />
+                          <ClickableStatusBadge
+                            status={booking.status}
+                            onStatusChange={(newStatus) => changeStatus(booking, newStatus)}
+                            isChanging={saving}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -442,21 +447,28 @@ function DetailPanel({
       />
 
       <div className="pt-2">
-        <p className="mb-2 text-xs uppercase text-muted">Status</p>
-        <div className="flex flex-wrap gap-2">
+        <p className="mb-2 text-xs uppercase text-muted">Update Status</p>
+        <div className="flex flex-wrap gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
           {(["pending", "confirmed", "completed", "cancelled"] as const).map(
             (status) => (
               <button
                 key={status}
                 disabled={saving || booking.status === status}
                 onClick={() => onChangeStatus(booking, status)}
-                className={`rounded-lg px-3 py-1.5 text-xs capitalize transition disabled:opacity-50 ${
+                className={`relative flex-1 min-w-[80px] rounded-lg px-2.5 py-2 text-xs font-medium capitalize transition-all duration-300 disabled:cursor-not-allowed ${
                   booking.status === status
-                    ? "bg-foreground text-white"
-                    : "border border-line hover:bg-background"
+                    ? "bg-gradient-to-br from-white/20 to-white/5 text-foreground shadow-sm shadow-black/10"
+                    : "text-muted hover:text-foreground active:scale-95"
+                } ${
+                  saving && "opacity-60"
                 }`}
               >
-                {filterLabels[status]}
+                <span className="relative inline-flex items-center gap-1">
+                  {booking.status === status && (
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  )}
+                  {filterLabels[status]}
+                </span>
               </button>
             )
           )}
