@@ -5,6 +5,7 @@ import {
   IconChart,
   IconClock,
   IconDashboard,
+  IconPieChart,
   IconRegister,
   IconScissors,
   IconSettings,
@@ -53,7 +54,7 @@ export const navGroups: NavGroup[] = [
       {
         href: "/reports",
         label: "Reports",
-        icon: IconChart,
+        icon: IconPieChart,
         restrictedFrom: ["staff"],
       },
     ],

@@ -112,6 +112,15 @@ export function IconChart(props: IconProps) {
   );
 }
 
+export function IconPieChart(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5H12Z" />
+      <path d="M15.8 3.9A8.5 8.5 0 0 1 20.1 8.2H12Z" />
+    </Svg>
+  );
+}
+
 export function IconTag(props: IconProps) {
   return (
     <Svg {...props}>
@@ -236,8 +245,8 @@ export function IconLogout(props: IconProps) {
 export function IconSidebarCollapse(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <path d="M9.5 4v16" />
+      <path d="M14 5.5 8 12l6 6.5" />
+      <path d="M18 5.5 12 12l6 6.5" />
     </Svg>
   );
 }

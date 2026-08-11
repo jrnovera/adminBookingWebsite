@@ -1,5 +1,9 @@
 export function formatMoney(amount: number, currency = "AED") {
-  return `${currency} ${amount.toFixed(2)}`;
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${currency} ${formatted}`;
 }
 
 export function parseTimeToMinutes(time: string) {

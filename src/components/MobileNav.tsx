@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
 import { isActive, visibleNavGroups } from "./navConfig";
 import { IconClose, IconLogout } from "./Icons";
+import SignOutConfirmDialog from "./SignOutConfirmDialog";
 
 /**
  * Full-height slide-over navigation for phones and tablets. Replaces the old
@@ -24,6 +25,12 @@ export default function MobileNav({
   const { session, signOut, role, isSuperAdmin } = useAuth();
   const groups = visibleNavGroups(role, isSuperAdmin);
   const { settings } = useShop();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+
+  async function handleSignOut() {
+    setShowSignOutConfirm(false);
+    await signOut();
+  }
 
   // Close on route change so tapping a link doesn't leave the panel open.
   useEffect(() => {
@@ -145,7 +152,7 @@ export default function MobileNav({
             </p>
           </div>
           <button
-            onClick={signOut}
+            onClick={() => setShowSignOutConfirm(true)}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-rail-line py-2.5 text-xs text-rail-text transition active:bg-rail-hover"
           >
             <IconLogout size={15} />
@@ -153,6 +160,12 @@ export default function MobileNav({
           </button>
         </div>
       </div>
+
+      <SignOutConfirmDialog
+        open={showSignOutConfirm}
+        onConfirm={handleSignOut}
+        onCancel={() => setShowSignOutConfirm(false)}
+      />
     </div>
   );
 }

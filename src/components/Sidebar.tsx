@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
 import { isActive, visibleNavGroups } from "./navConfig";
 import { IconLogout, IconSidebarCollapse } from "./Icons";
+import SignOutConfirmDialog from "./SignOutConfirmDialog";
 
 const COLLAPSE_KEY = "artisan.sidebar.collapsed";
 
@@ -20,6 +21,7 @@ export default function Sidebar() {
   const { settings } = useShop();
   const [collapsed, setCollapsed] = useState(false);
   const [ready, setReady] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   // Restore the rail width the admin last chose, after mount so SSR markup
   // and the first client render agree.
@@ -34,6 +36,11 @@ export default function Sidebar() {
       localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
       return next;
     });
+  }
+
+  async function handleSignOut() {
+    setShowSignOutConfirm(false);
+    await signOut();
   }
 
   const email = session?.user.email ?? "";
@@ -160,7 +167,7 @@ export default function Sidebar() {
 
         <div className={`mt-2 flex gap-2 ${collapsed ? "flex-col" : ""}`}>
           <button
-            onClick={signOut}
+            onClick={() => setShowSignOutConfirm(true)}
             title="Sign out"
             className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-rail-line py-2 text-xs text-rail-text transition hover:bg-rail-hover hover:text-white"
           >
@@ -177,6 +184,12 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      <SignOutConfirmDialog
+        open={showSignOutConfirm}
+        onConfirm={handleSignOut}
+        onCancel={() => setShowSignOutConfirm(false)}
+      />
     </aside>
   );
 }

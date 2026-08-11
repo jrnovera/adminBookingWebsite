@@ -6,6 +6,7 @@ import Sidebar from "./Sidebar";
 import MobileNav from "./MobileNav";
 import Topbar from "./Topbar";
 import { ToastProvider } from "./Toast";
+import SignOutConfirmDialog from "./SignOutConfirmDialog";
 import { useAuth } from "@/lib/auth";
 
 const publicRoutes = ["/login", "/register"];
@@ -16,7 +17,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const isPublic = publicRoutes.includes(pathname);
+
+  async function handleSignOut() {
+    setShowSignOutConfirm(false);
+    await signOut();
+  }
 
   useEffect(() => {
     if (loading) return;
@@ -47,13 +54,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               directly.
             </p>
             <button
-              onClick={() => signOut()}
+              onClick={() => setShowSignOutConfirm(true)}
               className="btn-ghost mt-5 px-4 py-2 text-sm hover:bg-background"
             >
               Sign out
             </button>
           </div>
         </div>
+        <SignOutConfirmDialog
+          open={showSignOutConfirm}
+          onConfirm={handleSignOut}
+          onCancel={() => setShowSignOutConfirm(false)}
+        />
       </ToastProvider>
     );
   }

@@ -10,7 +10,7 @@ import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useBookings } from "@/lib/useBookings";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/lib/auth";
-import { formatDateLong, formatMoney } from "@/lib/format";
+import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { exportTransactionsCsv } from "@/lib/exportCsv";
 import { deleteBooking } from "@/lib/bookings";
@@ -90,6 +90,18 @@ export default function TransactionsPage() {
 
   const currency = rows[0]?.currency ?? "AED";
 
+  // Today's earnings — always paid, always today, regardless of whatever
+  // filters the admin has applied to the table above.
+  const todayEarnings = useMemo(() => {
+    const todayKey = toDateKey(new Date());
+    return bookings
+      .filter(
+        (b) =>
+          b.status !== "cancelled" && b.is_paid && b.booking_date === todayKey
+      )
+      .reduce((sum, b) => sum + Number(b.total), 0);
+  }, [bookings]);
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((dir) => (dir === 1 ? -1 : 1));
@@ -126,10 +138,17 @@ export default function TransactionsPage() {
     <>
       <PageHeader
         title="Transactions"
-        subtitle={`${rows.length} transaction${rows.length === 1 ? "" : "s"} · ${formatMoney(
-          totals.total,
-          currency
-        )} total`}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <span>
+              {rows.length} transaction{rows.length === 1 ? "" : "s"} ·{" "}
+              {formatMoney(totals.total, currency)} total
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300">
+              Today: {formatMoney(todayEarnings, currency)}
+            </span>
+          </span>
+        }
         action={
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative w-40 shrink-0 sm:w-52">

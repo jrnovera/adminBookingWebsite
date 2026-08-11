@@ -4,7 +4,7 @@ export default function PageHeader({
   action,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
@@ -18,9 +18,9 @@ export default function PageHeader({
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-0.5 truncate text-xs text-muted sm:text-sm">
+            <div className="mt-0.5 truncate text-xs text-muted sm:text-sm">
               {subtitle}
-            </p>
+            </div>
           )}
         </div>
         {/* Actions scroll horizontally on narrow screens instead of wrapping
