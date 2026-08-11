@@ -41,6 +41,7 @@ export default function NewBookingModal({
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
+  const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [markPaid, setMarkPaid] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +81,7 @@ export default function NewBookingModal({
         full_name: fullName.trim(),
         email: email.trim(),
         mobile: mobile.trim(),
+        address: address.trim() || null,
         notes: notes.trim() || null,
         status: "confirmed",
         is_paid: markPaid,
@@ -140,6 +142,7 @@ export default function NewBookingModal({
           <Text label="Email" value={email} onChange={setEmail} type="email" required />
           <Text label="Mobile" value={mobile} onChange={setMobile} required />
         </div>
+        <Text label="Address" value={address} onChange={setAddress} />
         <Text label="Notes" value={notes} onChange={setNotes} />
 
         <div className="rounded-xl bg-background px-4 py-3 text-sm">

@@ -62,6 +62,7 @@ export type NewBooking = {
   full_name: string;
   email: string;
   mobile: string;
+  address: string | null;
   notes: string | null;
   status: BookingStatus;
   is_paid: boolean;

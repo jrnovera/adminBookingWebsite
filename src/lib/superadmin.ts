@@ -1,13 +1,24 @@
-// Superadmin is an app-level allowlist by email, not a database role — this
-// codebase already trusts every authenticated admin equally at the RLS layer
-// (see e.g. "Admins delete bookings" / "Admins manage staff": `for ... to
-// authenticated using (true)`), so this gate only controls what the UI
-// exposes. A signed-in admin who isn't superadmin simply never sees the
-// destructive actions; it is not a substitute for row-level security against
-// a hostile authenticated user with direct API access.
-const SUPERADMIN_EMAILS = ["admin@gmail.com"];
+import { getSupabaseClient } from "./supabase";
 
-export function isSuperAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return SUPERADMIN_EMAILS.includes(email.toLowerCase());
+/**
+ * Whether the signed-in user holds the superadmin role.
+ *
+ * The answer comes from public.user_roles (see supabase/017_superadmin_role.sql),
+ * not from a list in this file — the same table backs the RLS policies that
+ * actually enforce deletion, so the UI and the database can't disagree about
+ * who is a superadmin.
+ *
+ * Fails closed: any error, or no row, means "not a superadmin". Hiding a
+ * button the user could have pressed is a much cheaper mistake than showing
+ * one that will fail at the database.
+ */
+export async function fetchIsSuperAdmin(userId: string): Promise<boolean> {
+  const { data, error } = await getSupabaseClient()
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) return false;
+  return data?.role === "superadmin";
 }
