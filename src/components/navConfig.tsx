@@ -11,11 +11,18 @@ import {
   IconTag,
   IconUsers,
 } from "./Icons";
+import type { UserRole } from "@/lib/roles";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: (props: { size?: number; className?: string }) => React.ReactElement;
+  /** Hidden from these roles — currently only 'staff' is ever restricted;
+   * admin and superadmin see everything. Undefined = visible to all. */
+  restrictedFrom?: UserRole[];
+  /** Visible only to the superadmin — separate from restrictedFrom because
+   * this hides from admin too, not just staff. */
+  superadminOnly?: boolean;
 };
 
 export type NavGroup = {
@@ -43,22 +50,73 @@ export const navGroups: NavGroup[] = [
       { href: "/clients", label: "Clients", icon: IconUsers },
       { href: "/pos", label: "Point of Sale", icon: IconRegister },
       { href: "/transactions", label: "Transactions", icon: IconChart },
-      { href: "/reports", label: "Reports", icon: IconChart },
+      {
+        href: "/reports",
+        label: "Reports",
+        icon: IconChart,
+        restrictedFrom: ["staff"],
+      },
     ],
   },
   {
     label: "Manage",
     items: [
-      { href: "/staff", label: "Team", icon: IconScissors },
-      { href: "/services", label: "Services & Packages", icon: IconTag },
+      {
+        href: "/staff",
+        label: "Team",
+        icon: IconScissors,
+        restrictedFrom: ["staff"],
+      },
+      {
+        href: "/services",
+        label: "Services & Packages",
+        icon: IconTag,
+        restrictedFrom: ["staff"],
+      },
       { href: "/inventory", label: "Inventory", icon: IconBox },
       { href: "/promos", label: "Promos", icon: IconTag },
-      { href: "/settings", label: "Settings", icon: IconSettings },
+      {
+        href: "/accounts",
+        label: "Accounts",
+        icon: IconUsers,
+        superadminOnly: true,
+      },
+      {
+        href: "/settings",
+        label: "Settings",
+        icon: IconSettings,
+        restrictedFrom: ["staff"],
+      },
     ],
   },
 ];
 
 export const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
+
+function isVisible(
+  item: NavItem,
+  role: UserRole | null,
+  isSuperAdmin: boolean
+): boolean {
+  if (item.superadminOnly && !isSuperAdmin) return false;
+  if (role && item.restrictedFrom?.includes(role)) return false;
+  return true;
+}
+
+/** Same groups, filtered for what this role should actually see. A legacy
+ * account with `role: null` sees everything, matching how the app behaved
+ * before roles existed. */
+export function visibleNavGroups(
+  role: UserRole | null,
+  isSuperAdmin: boolean
+): NavGroup[] {
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isVisible(item, role, isSuperAdmin)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
 
 export function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);

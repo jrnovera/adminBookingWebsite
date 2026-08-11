@@ -2,6 +2,7 @@ import { addDays, startOfWeek, toDateKey } from "./format";
 
 export type PeriodKey =
   | "all"
+  | "today"
   | "this_week"
   | "last_week"
   | "this_month"
@@ -9,6 +10,7 @@ export type PeriodKey =
 
 export const periodLabels: Record<PeriodKey, string> = {
   all: "All time",
+  today: "Today",
   this_week: "This week",
   last_week: "Last week",
   this_month: "This month",
@@ -17,6 +19,7 @@ export const periodLabels: Record<PeriodKey, string> = {
 
 export const periodOptions: PeriodKey[] = [
   "all",
+  "today",
   "this_week",
   "last_week",
   "this_month",
@@ -36,6 +39,10 @@ export function resolvePeriod(
 ): { start: string; end: string } | null {
   if (period === "all") return null;
 
+  if (period === "today") {
+    const key = toDateKey(today);
+    return { start: key, end: key };
+  }
   if (period === "this_week") {
     const start = startOfWeek(today);
     return { start: toDateKey(start), end: toDateKey(addDays(start, 6)) };

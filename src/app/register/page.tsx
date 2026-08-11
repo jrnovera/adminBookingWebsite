@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import AuthCard from "@/components/AuthCard";
-import { getSupabaseClient } from "@/lib/supabase";
+import { signUpAsStaff } from "@/lib/accounts";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -18,17 +18,24 @@ export default function RegisterPage() {
     setError(null);
     setNotice(null);
 
-    const { data, error: signUpError } = await getSupabaseClient().auth.signUp({
-      email,
-      password,
-    });
-
-    if (signUpError) {
-      setError(signUpError.message);
-    } else if (!data.session) {
-      setNotice("Check your inbox to confirm your email, then sign in.");
+    try {
+      // Goes through an Edge Function rather than the client's own
+      // auth.signUp() — that path emails a confirmation link this project
+      // can't actually send (no SMTP configured), which left every earlier
+      // signup attempt stuck unconfirmed forever. This creates the account
+      // already confirmed, landed as 'staff' and pending a superadmin's
+      // approval before it can sign in.
+      await signUpAsStaff(email, password);
+      setNotice(
+        "Account created. A superadmin needs to approve it before you can sign in — check back soon."
+      );
+      setEmail("");
+      setPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create account");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   return (

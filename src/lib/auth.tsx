@@ -9,31 +9,49 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseClient } from "./supabase";
-import { fetchIsSuperAdmin } from "./superadmin";
+import { fetchRole, type RoleInfo, type UserRole } from "./roles";
 
 type AuthValue = {
   session: Session | null;
   loading: boolean;
-  /** True only for the allowlisted superadmin account — see lib/superadmin.ts. */
+  /** Role fetch is still in flight — distinct from `loading`, which only
+   * covers the initial session check. Nav/page guards should treat this as
+   * "don't know yet", not "no access". */
+  roleLoading: boolean;
+  /** `null` = legacy account with no role row = unrestricted (see lib/roles.ts). */
+  role: UserRole | null;
   isSuperAdmin: boolean;
+  /** True for admin or superadmin, or a legacy account with no role row.
+   * False only for an explicit 'staff' role. */
+  isAdminOrAbove: boolean;
+  /** A signed-in-but-unapproved self-signup. The app should show a pending
+   * message and nothing else — see /login. */
+  isPendingApproval: boolean;
   signOut: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthValue>({
+const defaultValue: AuthValue = {
   session: null,
   loading: true,
+  roleLoading: true,
+  role: null,
   isSuperAdmin: false,
+  isAdminOrAbove: true,
+  isPendingApproval: false,
   signOut: async () => {},
-});
+};
+
+const AuthContext = createContext<AuthValue>(defaultValue);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  // Stored with the id it was fetched for, so the result can be matched
-  // against the current session rather than reset in an effect.
-  const [role, setRole] = useState<{ userId: string; value: boolean } | null>(
-    null
-  );
+  // Stored with the id it was fetched for, so a stale result can never be
+  // read against a different (or no-longer-current) session.
+  const [roleState, setRoleState] = useState<{
+    userId: string;
+    info: RoleInfo;
+  } | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -53,37 +71,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // The role lives in the database, so it has to be fetched rather than
-  // derived from the session.
   const userId = session?.user.id;
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    fetchIsSuperAdmin(userId).then((value) => {
-      if (!cancelled) setRole({ userId, value });
+    fetchRole(userId).then((info) => {
+      if (!cancelled) setRoleState({ userId, info });
     });
     return () => {
       cancelled = true;
     };
   }, [userId]);
 
-  // Only honour a result that belongs to the user currently signed in, so a
-  // previous session's role can never carry over — and so the answer is
-  // false while the fetch is still in flight.
-  const isSuperAdmin = Boolean(
-    userId && role?.userId === userId && role.value
-  );
+  const matchesCurrentUser = userId && roleState?.userId === userId;
+  const roleLoading = Boolean(userId) && !matchesCurrentUser;
+  const info = matchesCurrentUser ? roleState.info : null;
+
+  const role = info?.role ?? null;
+  // A legacy row-less account is full access; an explicit row must be
+  // approved to count for anything.
+  const approved = info ? info.approved : true;
+  const isSuperAdmin = role === "superadmin" && approved;
+  const isAdminOrAbove = approved && (role === null || role !== "staff");
+  const isPendingApproval = Boolean(!roleLoading && info && !info.approved);
 
   const value = useMemo<AuthValue>(
     () => ({
       session,
       loading,
+      roleLoading,
+      role,
       isSuperAdmin,
+      isAdminOrAbove,
+      isPendingApproval,
       signOut: async () => {
         await getSupabaseClient().auth.signOut();
       },
     }),
-    [session, loading, isSuperAdmin]
+    [
+      session,
+      loading,
+      roleLoading,
+      role,
+      isSuperAdmin,
+      isAdminOrAbove,
+      isPendingApproval,
+    ]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

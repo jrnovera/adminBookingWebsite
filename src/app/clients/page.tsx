@@ -3,12 +3,16 @@
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import ClientDrawer from "@/components/ClientDrawer";
+import Pagination from "@/components/Pagination";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconSearch, IconUsers } from "@/components/Icons";
 import { deriveClients } from "@/lib/bookings";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
+import { usePagination } from "@/lib/usePagination";
 import type { Client } from "@/lib/types";
+
+const PAGE_SIZE = 20;
 
 export default function ClientsPage() {
   const { bookings, loading, error } = useBookings();
@@ -26,6 +30,11 @@ export default function ClientsPage() {
         client.mobile.includes(term)
     );
   }, [bookings, query]);
+
+  const { page, pageCount, pageItems, setPage, total } = usePagination(
+    clients,
+    PAGE_SIZE
+  );
 
   return (
     <>
@@ -79,7 +88,7 @@ export default function ClientsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {clients.map((client) => (
+                    {pageItems.map((client) => (
                       <tr
                         key={client.email}
                         onClick={() => setSelected(client)}
@@ -109,7 +118,7 @@ export default function ClientsPage() {
 
               {/* Mobile card list */}
               <ul className="divide-y divide-line sm:hidden">
-                {clients.map((client) => (
+                {pageItems.map((client) => (
                   <li
                     key={client.email}
                     onClick={() => setSelected(client)}
@@ -135,6 +144,14 @@ export default function ClientsPage() {
                   </li>
                 ))}
               </ul>
+
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                total={total}
+                pageSize={PAGE_SIZE}
+                onChange={setPage}
+              />
             </>
           )}
         </div>

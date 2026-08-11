@@ -20,8 +20,10 @@ import {
 import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
+import { useRequireRole } from "@/lib/useRequireRole";
 
 export default function SettingsPage() {
+  useRequireRole({ blockStaff: true });
   const { session } = useAuth();
   const actor = session?.user.email ?? null;
   const { reload } = useShop();

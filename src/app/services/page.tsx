@@ -19,10 +19,12 @@ import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import type { Service, ServiceCategory } from "@/lib/types";
+import { useRequireRole } from "@/lib/useRequireRole";
 
 type Filter = "all" | "services" | "packages";
 
 export default function ServicesPage() {
+  useRequireRole({ blockStaff: true });
   const toast = useToast();
   const { session } = useAuth();
   const actor = session?.user.email ?? null;

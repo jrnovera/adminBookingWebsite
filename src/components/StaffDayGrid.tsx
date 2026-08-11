@@ -141,8 +141,11 @@ export default function StaffDayGrid({
   // that means even 3-4 staff correctly falls back to horizontal scroll
   // instead of squeezing avatars and names into unreadable slivers.
   const wide = staff.length <= 5;
+  // Wider minimum on tablet so a longer role title ("Massage Therapist
+  // Expert & Beautician") has room to wrap onto a second line instead of
+  // colliding with the next column's text.
   const columnClass = wide
-    ? "min-w-[7rem] flex-1"
+    ? "min-w-[7rem] sm:min-w-[9rem] flex-1"
     : "w-[11rem] shrink-0";
 
   return (
@@ -166,14 +169,18 @@ export default function StaffDayGrid({
               return (
                 <div
                   key={member.id}
-                  className={`${columnClass} flex flex-col items-center gap-1.5 border-l border-line px-2 py-3`}
+                  className={`${columnClass} flex flex-col items-center gap-1.5 px-2 py-3`}
                 >
                   <Avatar name={member.name} src={member.avatar_url} size={38} />
-                  <div className="min-w-0 text-center leading-tight">
+                  <div className="min-w-0 w-full text-center leading-tight">
                     <p className="truncate text-[13px] font-medium">
                       {member.name}
                     </p>
-                    <p className="truncate text-[11px] text-muted">
+                    {/* Role wraps onto a second line instead of truncating —
+                        a long title like "Massage Therapist Expert &
+                        Beautician" otherwise reads as clipped garbage on a
+                        tablet-width column, or bleeds into the next one. */}
+                    <p className="line-clamp-2 break-words text-[11px] text-muted">
                       {off ? "Day off" : member.role}
                     </p>
                   </div>

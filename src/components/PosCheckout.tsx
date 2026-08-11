@@ -35,8 +35,12 @@ export default function PosCheckout({
   const [method, setMethod] = useState(booking.payment_method ?? "Cash");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { session } = useAuth();
+  const { session, role } = useAuth();
   const actor = session?.user.email ?? null;
+  // Staff can look up a bill and see the breakdown but not actually take
+  // payment — per the read-only-financials restriction (see navConfig.tsx
+  // and the sibling gate in the Transactions/POS list views).
+  const canCharge = role !== "staff";
 
   useEffect(() => {
     fetchProducts().then(
@@ -85,6 +89,7 @@ export default function PosCheckout({
   }
 
   async function handlePay() {
+    if (!canCharge) return;
     setBusy(true);
     setError(null);
     try {
@@ -258,10 +263,16 @@ export default function PosCheckout({
         </select>
 
         {error && <p className="text-rose-700">{error}</p>}
+        {!canCharge && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Staff accounts can look up bills but can&rsquo;t take payment —
+            ask an admin.
+          </p>
+        )}
 
         <button
           onClick={handlePay}
-          disabled={busy}
+          disabled={busy || !canCharge}
           className="btn-primary w-full py-3 text-sm hover:opacity-90 disabled:opacity-60"
         >
           {busy

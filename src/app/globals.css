@@ -213,6 +213,29 @@ p {
     background-position: 200% 0;
   }
 }
+/* Dashboard entrance: a touch more travel and time than pop-in so a run of
+   staggered cards reads as a deliberate cascade rather than a blink. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Slow ambient drift for the banner's decorative blobs — ~8s so it registers
+   as "alive" without being distracting while you actually read the numbers. */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(2%, -4%) scale(1.06);
+  }
+}
 
 .animate-toast-in {
   animation: toast-in 0.36s var(--ease-spring) both;
@@ -222,6 +245,12 @@ p {
 }
 .animate-fade-in {
   animation: fade-in 0.2s ease-out both;
+}
+.animate-rise-in {
+  animation: rise-in 0.5s var(--ease-out-quart) both;
+}
+.animate-drift {
+  animation: drift 9s ease-in-out infinite;
 }
 .animate-pop-in {
   animation: pop-in 0.24s var(--ease-out-quart) both;

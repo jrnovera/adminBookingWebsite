@@ -11,7 +11,8 @@ import { useAuth } from "@/lib/auth";
 const publicRoutes = ["/login", "/register"];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth();
+  const { session, loading, roleLoading, isPendingApproval, signOut } =
+    useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -30,6 +31,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) return <SplashMessage>Redirecting to sign in…</SplashMessage>;
+
+  // A self-signup that hasn't been accepted yet by a superadmin — signed in,
+  // but shown nothing except this and a way back out. Checked after the
+  // role fetch settles so an approved account never flashes this by mistake.
+  if (!roleLoading && isPendingApproval) {
+    return (
+      <ToastProvider>
+        <div className="grid min-h-screen place-items-center bg-background px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 text-center shadow-[var(--shadow-lg)]">
+            <p className="text-lg font-semibold">Waiting for approval</p>
+            <p className="mt-2 text-sm text-muted">
+              Your account has been created, but a superadmin needs to
+              approve it before you can sign in. Check back soon, or ask them
+              directly.
+            </p>
+            <button
+              onClick={() => signOut()}
+              className="btn-ghost mt-5 px-4 py-2 text-sm hover:bg-background"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </ToastProvider>
+    );
+  }
 
   return (
     <ToastProvider>

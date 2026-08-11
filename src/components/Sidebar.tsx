@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
-import { isActive, navGroups } from "./navConfig";
+import { isActive, visibleNavGroups } from "./navConfig";
 import { IconLogout, IconSidebarCollapse } from "./Icons";
 
 const COLLAPSE_KEY = "artisan.sidebar.collapsed";
@@ -15,7 +15,8 @@ export { navItems } from "./navConfig";
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { session, signOut } = useAuth();
+  const { session, signOut, role, isSuperAdmin } = useAuth();
+  const groups = visibleNavGroups(role, isSuperAdmin);
   const { settings } = useShop();
   const [collapsed, setCollapsed] = useState(false);
   const [ready, setReady] = useState(false);
@@ -79,7 +80,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="rail-scroll flex-1 overflow-y-auto px-3 pb-2">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={group.label} className="mb-5 last:mb-0">
             {collapsed ? (
               <div className="mx-2 mb-2 h-px bg-rail-line" />

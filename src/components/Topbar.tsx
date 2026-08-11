@@ -9,7 +9,7 @@ export default function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
       <button
         onClick={onOpenNav}
         aria-label="Open navigation menu"

@@ -7,6 +7,7 @@ import StatusBadge from "@/components/StatusBadge";
 import HomeBadge from "@/components/HomeBadge";
 import PeriodFilter from "@/components/PeriodFilter";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Pagination from "@/components/Pagination";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
@@ -18,7 +19,10 @@ import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { exportTransactionsCsv } from "@/lib/exportCsv";
 import { deleteBooking } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
+import { usePagination } from "@/lib/usePagination";
 import type { Booking, ServiceLocation } from "@/lib/types";
+
+const PAGE_SIZE = 15;
 
 const locationFilters: Array<ServiceLocation | "all"> = ["all", "salon", "home"];
 
@@ -73,6 +77,11 @@ export default function PosPage() {
       )
       .sort((a, b) => b.booking_date.localeCompare(a.booking_date));
   }, [bookings, query, showPaid, period, exactDate, locationFilter]);
+
+  const { page, pageCount, pageItems, setPage, total } = usePagination(
+    results,
+    PAGE_SIZE
+  );
 
   async function handleDeleteBill() {
     if (!deleting || !isSuperAdmin) return;
@@ -210,7 +219,7 @@ export default function PosPage() {
           </div>
         ) : (
           <div className="grid gap-3">
-            {results.map((booking) => (
+            {pageItems.map((booking) => (
               <button
                 key={booking.id}
                 onClick={() => setSelected(booking)}
@@ -267,6 +276,18 @@ export default function PosPage() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {!loading && results.length > 0 && (
+          <div className="card overflow-hidden">
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={PAGE_SIZE}
+              onChange={setPage}
+            />
           </div>
         )}
       </main>

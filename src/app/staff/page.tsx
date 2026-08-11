@@ -19,8 +19,10 @@ import { fetchBookings, reassignStaffBookings } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import type { Staff, StaffTimeOff } from "@/lib/types";
+import { useRequireRole } from "@/lib/useRequireRole";
 
 export default function StaffPage() {
+  useRequireRole({ blockStaff: true });
   const toast = useToast();
   const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
