@@ -79,10 +79,13 @@ export default function StaffDayGrid({
     return () => clearInterval(timer);
   }, []);
 
+  // Half-hour marks so the axis reads "9:00, 9:30, 10:00…" instead of
+  // jumping a full hour at a time — 30 minutes is the shortest a service on
+  // this site runs, so that's the finest grain worth labeling.
   const hourMarks = useMemo(() => {
     const marks: number[] = [];
-    const firstHour = Math.ceil(dayStart / 60) * 60;
-    for (let minutes = firstHour; minutes <= dayEnd; minutes += 60) {
+    const firstHalfHour = Math.ceil(dayStart / 30) * 30;
+    for (let minutes = firstHalfHour; minutes <= dayEnd; minutes += 30) {
       marks.push(minutes);
     }
     return marks;
@@ -190,11 +193,18 @@ export default function StaffDayGrid({
               {hourMarks.map((minutes, index) => (
                 <span
                   key={minutes}
-                  className={`absolute right-2 text-[11px] font-medium tabular-nums text-muted ${
+                  className={`absolute right-2 tabular-nums ${
                     // The first mark sits flush with the grid's top edge —
                     // centering it would push half the label above the
                     // boundary, under the sticky header, and clip it.
                     index === 0 ? "" : "-translate-y-1/2"
+                  } ${
+                    // On the hour reads bold and dark; the half-hour between
+                    // is a lighter, smaller label so the axis doesn't turn
+                    // into a wall of equally-loud text.
+                    minutes % 60 === 0
+                      ? "text-[11px] font-medium text-muted"
+                      : "text-[10px] text-muted/60"
                   }`}
                   style={{
                     top: ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
@@ -254,11 +264,14 @@ export default function StaffDayGrid({
                   }`}
                   style={{ height: gridHeight }}
                 >
-                  {/* Hour lines */}
+                  {/* Hour and half-hour lines — the half-hour line is fainter
+                      so the grid still reads as hour-by-hour at a glance. */}
                   {hourMarks.map((minutes) => (
                     <div
                       key={minutes}
-                      className="pointer-events-none absolute inset-x-0 border-t border-line"
+                      className={`pointer-events-none absolute inset-x-0 border-t ${
+                        minutes % 60 === 0 ? "border-line" : "border-line/50"
+                      }`}
                       style={{
                         top:
                           ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,

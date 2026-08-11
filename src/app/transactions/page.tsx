@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import PeriodFilter from "@/components/PeriodFilter";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconRegister, IconSearch } from "@/components/Icons";
 import { useBookings } from "@/lib/useBookings";
 import { formatDateLong, formatMoney } from "@/lib/format";
-import type { Booking } from "@/lib/types";
+import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
+import { exportTransactionsCsv } from "@/lib/exportCsv";
 
 type SortKey = "date" | "client" | "method" | "total";
 type PaidFilter = "all" | "paid" | "unpaid";
@@ -18,72 +20,20 @@ const columns: Array<{ key: SortKey | "index"; label: string; align?: "right" }>
   { key: "total", label: "Total", align: "right" },
 ];
 
-function toCsvValue(value: string | number) {
-  const text = String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function downloadCsv(rows: Booking[]) {
-  const header = [
-    "Date",
-    "Time",
-    "Client",
-    "Email",
-    "Mobile",
-    "Service",
-    "Staff",
-    "Subtotal",
-    "Discount",
-    "Tax",
-    "Tip",
-    "Total",
-    "Currency",
-    "Payment method",
-    "Paid",
-    "Status",
-  ];
-  const lines = rows.map((b) =>
-    [
-      b.booking_date,
-      b.booking_time,
-      b.full_name,
-      b.email,
-      b.mobile,
-      b.service_name,
-      b.staff_name,
-      Number(b.subtotal).toFixed(2),
-      Number(b.discount).toFixed(2),
-      Number(b.tax).toFixed(2),
-      Number(b.tip ?? 0).toFixed(2),
-      Number(b.total).toFixed(2),
-      b.currency,
-      b.payment_method ?? "",
-      b.is_paid ? "Yes" : "No",
-      b.status,
-    ]
-      .map(toCsvValue)
-      .join(",")
-  );
-  const csv = [header.map(toCsvValue).join(","), ...lines].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function TransactionsPage() {
   const { bookings, loading, error } = useBookings();
   const [query, setQuery] = useState("");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("paid");
+  const [period, setPeriod] = useState<PeriodKey>("all");
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
 
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    let list = bookings.filter((b) => b.status !== "cancelled");
+    const bounds = resolvePeriod(period);
+    let list = bookings.filter(
+      (b) => b.status !== "cancelled" && withinPeriod(b.booking_date, bounds)
+    );
     if (paidFilter === "paid") list = list.filter((b) => b.is_paid);
     if (paidFilter === "unpaid") list = list.filter((b) => !b.is_paid);
     if (term) {
@@ -112,7 +62,7 @@ export default function TransactionsPage() {
       return cmp * sortDir;
     });
     return sorted;
-  }, [bookings, query, paidFilter, sortKey, sortDir]);
+  }, [bookings, query, paidFilter, period, sortKey, sortDir]);
 
   const totals = useMemo(() => {
     return rows.reduce(
@@ -161,7 +111,7 @@ export default function TransactionsPage() {
               />
             </div>
             <button
-              onClick={() => downloadCsv(rows)}
+              onClick={() => exportTransactionsCsv(rows)}
               disabled={rows.length === 0}
               className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
             >
@@ -175,20 +125,23 @@ export default function TransactionsPage() {
       <main className="flex-1 space-y-4 p-4 sm:p-6">
         {error && <ErrorBanner message={error} />}
 
-        <div className="flex gap-1 rounded-xl border border-line p-1 w-fit">
-          {(["all", "paid", "unpaid"] as PaidFilter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setPaidFilter(f)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition ${
-                paidFilter === f
-                  ? "bg-foreground text-surface"
-                  : "text-muted hover:bg-background"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-fit gap-1 rounded-xl border border-line p-1">
+            {(["all", "paid", "unpaid"] as PaidFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setPaidFilter(f)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition ${
+                  paidFilter === f
+                    ? "bg-foreground text-surface"
+                    : "text-muted hover:bg-background"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <PeriodFilter value={period} onChange={setPeriod} />
         </div>
 
         <div className="overflow-hidden card">

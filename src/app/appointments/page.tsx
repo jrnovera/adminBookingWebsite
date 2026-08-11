@@ -5,12 +5,13 @@ import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import HomeBadge from "@/components/HomeBadge";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
-import { IconClock } from "@/components/Icons";
+import { IconClock, IconRegister } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import { updateBookingStatus } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney } from "@/lib/format";
+import { exportBookingsCsv } from "@/lib/exportCsv";
 import { useBookings } from "@/lib/useBookings";
 import type { Booking, BookingStatus, ServiceLocation } from "@/lib/types";
 
@@ -153,6 +154,15 @@ export default function AppointmentsPage() {
                 {filterLabels[option]}
               </button>
             ))}
+            <span className="mx-1 h-5 w-px bg-line" aria-hidden />
+            <button
+              onClick={() => exportBookingsCsv(visible)}
+              disabled={visible.length === 0}
+              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs hover:btn-primary-hover disabled:opacity-50"
+            >
+              <IconRegister size={13} />
+              <span className="hidden sm:inline">Export</span>
+            </button>
           </div>
         }
       />

@@ -1,16 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import PeriodFilter from "@/components/PeriodFilter";
 import { ErrorBanner } from "@/components/Feedback";
 import { formatMoney } from "@/lib/format";
+import { periodLabels, resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { useBookings } from "@/lib/useBookings";
 
 export default function ReportsPage() {
   const { bookings, loading, error } = useBookings();
+  const [period, setPeriod] = useState<PeriodKey>("all");
 
   const report = useMemo(() => {
-    const paid = bookings.filter((b) => b.status !== "cancelled");
+    const bounds = resolvePeriod(period);
+    const paid = bookings.filter(
+      (b) => b.status !== "cancelled" && withinPeriod(b.booking_date, bounds)
+    );
     const currency = paid[0]?.currency ?? "AED";
 
     const tally = (key: "service_name" | "staff_name") => {
@@ -34,14 +40,19 @@ export default function ReportsPage() {
       byService: tally("service_name"),
       byStaff: tally("staff_name"),
     };
-  }, [bookings]);
+  }, [bookings, period]);
 
   return (
     <>
-      <PageHeader title="Reports" subtitle="All-time performance" />
+      <PageHeader
+        title="Reports"
+        subtitle={`${periodLabels[period]} performance`}
+      />
 
       <main className="flex-1 space-y-5 p-4 sm:space-y-6 sm:p-6">
         {error && <ErrorBanner message={error} />}
+
+        <PeriodFilter value={period} onChange={setPeriod} />
 
         <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
           <Stat

@@ -102,10 +102,13 @@ export default function WeekTimeGrid({
     return () => clearInterval(timer);
   }, []);
 
+  // Half-hour marks so the axis reads "9:00, 9:30, 10:00…" instead of
+  // jumping a full hour at a time — 30 minutes is the shortest a service on
+  // this site runs, so that's the finest grain worth labeling.
   const hourMarks = useMemo(() => {
     const marks: number[] = [];
-    const firstHour = Math.ceil(dayStart / 60) * 60;
-    for (let minutes = firstHour; minutes <= dayEnd; minutes += 60) {
+    const firstHalfHour = Math.ceil(dayStart / 30) * 30;
+    for (let minutes = firstHalfHour; minutes <= dayEnd; minutes += 30) {
       marks.push(minutes);
     }
     return marks;
@@ -211,11 +214,15 @@ export default function WeekTimeGrid({
               {hourMarks.map((minutes, index) => (
                 <span
                   key={minutes}
-                  className={`absolute right-2 text-[10px] font-medium tabular-nums text-muted ${
+                  className={`absolute right-2 tabular-nums ${
                     // Same fix as the day view: the first mark sits at the
                     // grid's top edge, so centering it would clip half the
                     // label under the sticky header above.
                     index === 0 ? "" : "-translate-y-1/2"
+                  } ${
+                    minutes % 60 === 0
+                      ? "text-[10px] font-medium text-muted"
+                      : "text-[9px] text-muted/60"
                   }`}
                   style={{
                     top: ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
@@ -268,7 +275,9 @@ export default function WeekTimeGrid({
                   {hourMarks.map((minutes) => (
                     <div
                       key={minutes}
-                      className="pointer-events-none absolute inset-x-0 border-t border-line"
+                      className={`pointer-events-none absolute inset-x-0 border-t ${
+                        minutes % 60 === 0 ? "border-line" : "border-line/50"
+                      }`}
                       style={{
                         top:
                           ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
