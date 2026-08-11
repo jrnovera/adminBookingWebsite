@@ -9,16 +9,20 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseClient } from "./supabase";
+import { isSuperAdminEmail } from "./superadmin";
 
 type AuthValue = {
   session: Session | null;
   loading: boolean;
+  /** True only for the allowlisted superadmin account — see lib/superadmin.ts. */
+  isSuperAdmin: boolean;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthValue>({
   session: null,
   loading: true,
+  isSuperAdmin: false,
   signOut: async () => {},
 });
 
@@ -48,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       session,
       loading,
+      isSuperAdmin: isSuperAdminEmail(session?.user.email),
       signOut: async () => {
         await getSupabaseClient().auth.signOut();
       },

@@ -6,14 +6,18 @@ import PosCheckout from "@/components/PosCheckout";
 import StatusBadge from "@/components/StatusBadge";
 import HomeBadge from "@/components/HomeBadge";
 import PeriodFilter from "@/components/PeriodFilter";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
-import { IconRegister, IconSearch } from "@/components/Icons";
+import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
+import { useAuth } from "@/lib/auth";
 import { useBookings } from "@/lib/useBookings";
 import { useShop } from "@/lib/shop";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { exportTransactionsCsv } from "@/lib/exportCsv";
+import { deleteBooking } from "@/lib/bookings";
+import { logActivity } from "@/lib/activity";
 import type { Booking, ServiceLocation } from "@/lib/types";
 
 const locationFilters: Array<ServiceLocation | "all"> = ["all", "salon", "home"];
@@ -28,8 +32,11 @@ export default function PosPage() {
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
   const toast = useToast();
+  const { session, isSuperAdmin } = useAuth();
+  const actor = session?.user.email ?? null;
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Booking | null>(null);
+  const [deleting, setDeleting] = useState<Booking | null>(null);
   const [showPaid, setShowPaid] = useState(false);
   const [period, setPeriod] = useState<PeriodKey>("all");
   // A specific day picked in the date input. Takes over from the period
@@ -67,20 +74,56 @@ export default function PosPage() {
       .sort((a, b) => b.booking_date.localeCompare(a.booking_date));
   }, [bookings, query, showPaid, period, exactDate, locationFilter]);
 
+  async function handleDeleteBill() {
+    if (!deleting || !isSuperAdmin) return;
+    try {
+      await deleteBooking(deleting.id);
+      if (selected?.id === deleting.id) setSelected(null);
+      setDeleting(null);
+      await reload();
+      toast.success("Bill deleted", `${deleting.full_name}'s bill was permanently removed.`);
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: deleting.id,
+        action: "deleted",
+        summary: `Deleted bill for ${deleting.full_name}`,
+        detail: `${formatMoney(Number(deleting.total), deleting.currency)} · ${formatDateLong(
+          deleting.booking_date
+        )}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      toast.error("Delete failed", message);
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="POS / Checkout"
         subtitle="Look up a client's bill, add extras and take payment"
         action={
-          <button
-            onClick={() => exportTransactionsCsv(results)}
-            disabled={results.length === 0}
-            className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
-          >
-            <IconRegister size={15} />
-            <span className="hidden sm:inline">Export</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => exportTransactionsCsv(results)}
+              disabled={results.length === 0}
+              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
+            >
+              <IconRegister size={15} />
+              <span className="hidden sm:inline">
+                Export{results.length > 0 ? ` (${results.length})` : ""}
+              </span>
+            </button>
+            <button
+              onClick={() => exportTransactionsCsv(bookings)}
+              disabled={bookings.length === 0}
+              className="btn-ghost flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:bg-background disabled:opacity-50"
+            >
+              <IconRegister size={15} />
+              <span className="hidden sm:inline">Export all</span>
+            </button>
+          </div>
         }
       />
 
@@ -200,6 +243,27 @@ export default function PosPage() {
                   <span className="font-semibold tabular-nums">
                     {formatMoney(Number(booking.total), booking.currency)}
                   </span>
+                  {isSuperAdmin && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleting(booking);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          setDeleting(booking);
+                        }
+                      }}
+                      aria-label="Delete bill"
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-rose-600 hover:bg-rose-50"
+                    >
+                      <IconClose size={14} />
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
@@ -218,6 +282,26 @@ export default function PosPage() {
             reload();
             toast.success("Payment recorded", "The bill has been marked paid.");
           }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this bill?"
+          tone="danger"
+          confirmLabel="Delete"
+          message={
+            <>
+              <span className="font-medium text-foreground">
+                {deleting.full_name}
+              </span>
+              &rsquo;s bill for{" "}
+              {formatMoney(Number(deleting.total), deleting.currency)} will be
+              permanently deleted. This cannot be undone.
+            </>
+          }
+          onClose={() => setDeleting(null)}
+          onConfirm={handleDeleteBill}
         />
       )}
     </>

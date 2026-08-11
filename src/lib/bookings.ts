@@ -1,5 +1,14 @@
 import { getSupabaseClient } from "./supabase";
-import type { BillAddon, Booking, BookingStatus, Client } from "./types";
+import { isStaffOffOn } from "./staff";
+import { toDateKey } from "./format";
+import type {
+  BillAddon,
+  Booking,
+  BookingStatus,
+  Client,
+  Staff,
+  StaffTimeOff,
+} from "./types";
 
 export async function fetchBookings(): Promise<Booking[]> {
   const supabase = getSupabaseClient();
@@ -20,6 +29,20 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     .update({ status })
     .eq("id", id);
 
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Permanently removes a booking row — used from Appointments, Transactions
+ * and POS. Gated to the superadmin account in the UI (see lib/superadmin.ts);
+ * this call itself has no extra guard, so it must only be reachable from a
+ * control that has already checked `isSuperAdmin`.
+ */
+export async function deleteBooking(id: string) {
+  const { error } = await getSupabaseClient()
+    .from("bookings")
+    .delete()
+    .eq("id", id);
   if (error) throw new Error(error.message);
 }
 
@@ -159,4 +182,105 @@ export function deriveClients(bookings: Booking[]): Client[] {
   }
 
   return [...byEmail.values()].sort((a, b) => b.totalSpent - a.totalSpent);
+}
+
+export type ReassignmentResult = {
+  /** Successfully moved onto another team member. */
+  reassigned: Array<{ booking: Booking; toStaffName: string }>;
+  /** Nobody was free at that exact date/time — left pointing at the removed
+   * staff member's old id, which the calendar already renders as
+   * "Unassigned" (see calendar/page.tsx's byId/byName resolution). */
+  unassignable: Booking[];
+};
+
+/**
+ * Moves a staff member's upcoming, live appointments onto someone else
+ * before that staff member is deleted — so removing someone from the team
+ * doesn't strand their clients' bookings on a therapist who no longer
+ * exists.
+ *
+ * Only pending/confirmed bookings from today onward are touched; completed,
+ * cancelled and past appointments are history and stay exactly as they were
+ * for reporting purposes.
+ *
+ * A candidate is skipped if they're off that day (weekly day off or booked
+ * time off) and otherwise ranked by: same role as the departing staff member
+ * first, then whoever has the fewest bookings that day — the "freest"
+ * therapist gets first refusal. The actual scheduling conflict check is left
+ * to the database's exclusion constraint (bookings_no_double_booking): if an
+ * update collides, this catches it and moves on to the next candidate rather
+ * than guessing at availability itself.
+ */
+export async function reassignStaffBookings(
+  removedStaff: Staff,
+  allBookings: Booking[],
+  activeStaff: Staff[],
+  timeOff: StaffTimeOff[]
+): Promise<ReassignmentResult> {
+  const supabase = getSupabaseClient();
+  const today = toDateKey(new Date());
+  const candidates = activeStaff.filter((s) => s.id !== removedStaff.id);
+
+  const toMove = allBookings.filter(
+    (b) =>
+      b.staff_id === removedStaff.id &&
+      (b.status === "pending" || b.status === "confirmed") &&
+      b.booking_date >= today
+  );
+
+  const result: ReassignmentResult = { reassigned: [], unassignable: [] };
+  if (toMove.length === 0 || candidates.length === 0) {
+    result.unassignable.push(...toMove);
+    return result;
+  }
+
+  // Mutated as bookings get placed so same-day load balances across this
+  // batch instead of every booking racing for whoever looked freest at the
+  // start.
+  const runtime = [...allBookings];
+
+  for (const booking of toMove) {
+    const ranked = candidates
+      .filter((c) => !isStaffOffOn(c, booking.booking_date, timeOff))
+      .sort((a, b) => {
+        const roleRank = (s: Staff) => (s.role === removedStaff.role ? 0 : 1);
+        const loadOf = (staffId: string) =>
+          runtime.filter(
+            (b) =>
+              b.staff_id === staffId &&
+              b.booking_date === booking.booking_date &&
+              b.status !== "cancelled"
+          ).length;
+        return roleRank(a) - roleRank(b) || loadOf(a.id) - loadOf(b.id);
+      });
+
+    let placed = false;
+    for (const candidate of ranked) {
+      const { error } = await supabase
+        .from("bookings")
+        .update({ staff_id: candidate.id, staff_name: candidate.name })
+        .eq("id", booking.id);
+
+      if (!error) {
+        const index = runtime.findIndex((b) => b.id === booking.id);
+        if (index !== -1) {
+          runtime[index] = {
+            ...runtime[index],
+            staff_id: candidate.id,
+            staff_name: candidate.name,
+          };
+        }
+        result.reassigned.push({ booking, toStaffName: candidate.name });
+        placed = true;
+        break;
+      }
+      // 23P01 = the no-double-booking exclusion constraint — this candidate
+      // already has something else at that time. Try the next one.
+      if (error.code !== "23P01") throw new Error(error.message);
+    }
+
+    if (!placed) result.unassignable.push(booking);
+  }
+
+  return result;
 }

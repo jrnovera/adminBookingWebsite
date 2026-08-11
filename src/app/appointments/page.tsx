@@ -5,9 +5,11 @@ import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import HomeBadge from "@/components/HomeBadge";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
-import { IconClock, IconRegister } from "@/components/Icons";
+import { IconClock } from "@/components/Icons";
+import ExportBar from "@/components/ExportBar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
-import { updateBookingStatus } from "@/lib/bookings";
+import { deleteBooking, updateBookingStatus } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney } from "@/lib/format";
@@ -43,8 +45,9 @@ const filterLabels: Record<BookingStatus | "all", string> = {
 export default function AppointmentsPage() {
   const { bookings, loading, error, reload } = useBookings();
   const toast = useToast();
-  const { session } = useAuth();
+  const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
+  const [deleting, setDeleting] = useState<Booking | null>(null);
   // `null` = the admin hasn't picked a filter yet, so fall back to whatever is
   // most useful: bookings waiting on a decision, or everything when there are
   // none. Derived rather than set in an effect so it settles as soon as the
@@ -66,15 +69,20 @@ export default function AppointmentsPage() {
 
   const visible = useMemo(
     () =>
-      bookings.filter((booking) => {
-        if (activeFilter !== "all" && booking.status !== activeFilter) {
-          return false;
-        }
-        if (locationFilter === "all") return true;
-        // Bookings made before home service existed have no value stored, and
-        // those were all in-salon.
-        return (booking.service_location ?? "salon") === locationFilter;
-      }),
+      bookings
+        .filter((booking) => {
+          if (activeFilter !== "all" && booking.status !== activeFilter) {
+            return false;
+          }
+          if (locationFilter === "all") return true;
+          // Bookings made before home service existed have no value stored,
+          // and those were all in-salon.
+          return (booking.service_location ?? "salon") === locationFilter;
+        })
+        // Most recently created first — this is a queue of what clients just
+        // booked, not a schedule (Calendar already covers that view sorted
+        // by appointment time).
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [bookings, activeFilter, locationFilter]
   );
 
@@ -112,6 +120,30 @@ export default function AppointmentsPage() {
       toast.error("Update failed", message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteBooking() {
+    if (!deleting || !isSuperAdmin) return;
+    try {
+      await deleteBooking(deleting.id);
+      if (selected?.id === deleting.id) setSelected(null);
+      setDeleting(null);
+      await reload();
+      toast.success("Booking deleted", `${deleting.full_name}'s appointment was permanently removed.`);
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: deleting.id,
+        action: "deleted",
+        summary: `Deleted booking for ${deleting.full_name}`,
+        detail: `${deleting.service_name} · ${formatDateLong(
+          deleting.booking_date
+        )} ${deleting.booking_time}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      toast.error("Delete failed", message);
     }
   }
 
@@ -154,18 +186,17 @@ export default function AppointmentsPage() {
                 {filterLabels[option]}
               </button>
             ))}
-            <span className="mx-1 h-5 w-px bg-line" aria-hidden />
-            <button
-              onClick={() => exportBookingsCsv(visible)}
-              disabled={visible.length === 0}
-              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs hover:btn-primary-hover disabled:opacity-50"
-            >
-              <IconRegister size={13} />
-              <span className="hidden sm:inline">Export</span>
-            </button>
           </div>
         }
       />
+
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+        <ExportBar
+          rows={visible}
+          allRows={bookings}
+          onExport={exportBookingsCsv}
+        />
+      </div>
 
       <main className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6 xl:flex-row">
         <section className="min-w-0 flex-1 overflow-hidden card">
@@ -291,6 +322,8 @@ export default function AppointmentsPage() {
               saving={saving}
               saveError={saveError}
               onChangeStatus={changeStatus}
+              canDelete={isSuperAdmin}
+              onDelete={() => setDeleting(selected)}
             />
           )}
         </aside>
@@ -320,9 +353,31 @@ export default function AppointmentsPage() {
               saving={saving}
               saveError={saveError}
               onChangeStatus={changeStatus}
+              canDelete={isSuperAdmin}
+              onDelete={() => setDeleting(selected)}
             />
           </div>
         </div>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this booking?"
+          tone="danger"
+          confirmLabel="Delete"
+          message={
+            <>
+              <span className="font-medium text-foreground">
+                {deleting.full_name}
+              </span>
+              &rsquo;s appointment for {deleting.service_name} on{" "}
+              {formatDateLong(deleting.booking_date)} will be permanently
+              deleted. This cannot be undone.
+            </>
+          }
+          onClose={() => setDeleting(null)}
+          onConfirm={handleDeleteBooking}
+        />
       )}
     </>
   );
@@ -333,11 +388,15 @@ function DetailPanel({
   saving,
   saveError,
   onChangeStatus,
+  canDelete,
+  onDelete,
 }: {
   booking: Booking;
   saving: boolean;
   saveError: string | null;
   onChangeStatus: (booking: Booking, status: BookingStatus) => void;
+  canDelete: boolean;
+  onDelete: () => void;
 }) {
   return (
     <div className="mt-4 space-y-3 text-sm">
@@ -374,6 +433,13 @@ function DetailPanel({
       {booking.voucher_code && (
         <Detail label="Voucher" value={booking.voucher_code} />
       )}
+      <Detail
+        label="Booked"
+        value={new Date(booking.created_at).toLocaleString("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}
+      />
 
       <div className="pt-2">
         <p className="mb-2 text-xs uppercase text-muted">Status</p>
@@ -397,6 +463,17 @@ function DetailPanel({
         </div>
         {saveError && <ErrorBanner message={saveError} />}
       </div>
+
+      {canDelete && (
+        <div className="border-t border-line pt-3">
+          <button
+            onClick={onDelete}
+            className="w-full rounded-lg border border-rose-200 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+          >
+            Delete booking permanently
+          </button>
+        </div>
+      )}
     </div>
   );
 }

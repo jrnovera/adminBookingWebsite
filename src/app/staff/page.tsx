@@ -15,13 +15,14 @@ import {
   fetchTimeOff,
   weekdayLabels,
 } from "@/lib/staff";
+import { fetchBookings, reassignStaffBookings } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import type { Staff, StaffTimeOff } from "@/lib/types";
 
 export default function StaffPage() {
   const toast = useToast();
-  const { session } = useAuth();
+  const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
@@ -49,16 +50,58 @@ export default function StaffPage() {
   useEffect(load, [load]);
 
   async function handleDelete() {
-    if (!removing) return;
+    if (!removing || !isSuperAdmin) return;
     try {
+      // Move this person's upcoming appointments onto someone else first —
+      // deleting the staff row doesn't touch bookings.staff_id (it's a free
+      // text field, not a foreign key), so without this the calendar would
+      // just show those clients as "Unassigned" going forward.
+      const activePool = staff.filter(
+        (s) => s.active && s.id !== removing.id
+      );
+      const bookings = await fetchBookings();
+      const { reassigned, unassignable } = await reassignStaffBookings(
+        removing,
+        bookings,
+        activePool,
+        timeOff
+      );
+
       await deleteStaff(removing.id);
-      toast.success("Staff removed", `${removing.name} was removed from the team.`);
+
+      const parts = [`${removing.name} was removed from the team.`];
+      if (reassigned.length > 0) {
+        parts.push(
+          `${reassigned.length} upcoming appointment${
+            reassigned.length === 1 ? "" : "s"
+          } moved to another team member.`
+        );
+      }
+      if (unassignable.length > 0) {
+        parts.push(
+          `${unassignable.length} appointment${
+            unassignable.length === 1 ? "" : "s"
+          } need${unassignable.length === 1 ? "s" : ""} manual reassignment — nobody else was free.`
+        );
+      }
+      if (unassignable.length > 0) {
+        toast.error("Staff removed", parts.join(" "));
+      } else {
+        toast.success("Staff removed", parts.join(" "));
+      }
+
       logActivity({
         actor,
         entity: "staff",
         entity_id: removing.id,
         action: "deleted",
         summary: `Removed team member ${removing.name}`,
+        detail:
+          reassigned.length > 0
+            ? `Reassigned: ${reassigned
+                .map((r) => `${r.booking.full_name} → ${r.toStaffName}`)
+                .join(", ")}`
+            : undefined,
       });
       setRemoving(null);
       load();
@@ -173,12 +216,14 @@ export default function StaffPage() {
                     >
                       Time off
                     </button>
-                    <button
-                      onClick={() => setRemoving(member)}
-                      className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs text-rose-700 transition hover:bg-rose-50"
-                    >
-                      Remove
-                    </button>
+                    {isSuperAdmin && (
+                      <button
+                        onClick={() => setRemoving(member)}
+                        className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs text-rose-700 transition hover:bg-rose-50"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -222,7 +267,9 @@ export default function StaffPage() {
               <span className="font-medium text-foreground">
                 {removing.name}
               </span>{" "}
-              will be removed from your team and unassigned from the calendar.
+              will be removed from your team. Their upcoming appointments will
+              be moved to another free team member automatically, where one
+              is available.
             </>
           }
           confirmLabel="Remove"

@@ -3,12 +3,19 @@
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import PeriodFilter from "@/components/PeriodFilter";
+import ExportBar from "@/components/ExportBar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
-import { IconRegister, IconSearch } from "@/components/Icons";
+import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useBookings } from "@/lib/useBookings";
+import { useToast } from "@/components/Toast";
+import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { exportTransactionsCsv } from "@/lib/exportCsv";
+import { deleteBooking } from "@/lib/bookings";
+import { logActivity } from "@/lib/activity";
+import type { Booking } from "@/lib/types";
 
 type SortKey = "date" | "client" | "method" | "total";
 type PaidFilter = "all" | "paid" | "unpaid";
@@ -21,12 +28,16 @@ const columns: Array<{ key: SortKey | "index"; label: string; align?: "right" }>
 ];
 
 export default function TransactionsPage() {
-  const { bookings, loading, error } = useBookings();
+  const { bookings, loading, error, reload } = useBookings();
+  const toast = useToast();
+  const { session, isSuperAdmin } = useAuth();
+  const actor = session?.user.email ?? null;
   const [query, setQuery] = useState("");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("paid");
   const [period, setPeriod] = useState<PeriodKey>("all");
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [deleting, setDeleting] = useState<Booking | null>(null);
 
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -88,6 +99,29 @@ export default function TransactionsPage() {
     }
   }
 
+  async function handleDeleteTransaction() {
+    if (!deleting || !isSuperAdmin) return;
+    try {
+      await deleteBooking(deleting.id);
+      setDeleting(null);
+      await reload();
+      toast.success("Transaction deleted", `${deleting.full_name}'s record was permanently removed.`);
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: deleting.id,
+        action: "deleted",
+        summary: `Deleted transaction for ${deleting.full_name}`,
+        detail: `${formatMoney(Number(deleting.total), deleting.currency)} · ${
+          deleting.payment_method ?? "no method"
+        } · ${formatDateLong(deleting.booking_date)}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      toast.error("Delete failed", message);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -110,14 +144,6 @@ export default function TransactionsPage() {
                 className="w-full rounded-xl border border-line py-2 pl-8 pr-3 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
               />
             </div>
-            <button
-              onClick={() => exportTransactionsCsv(rows)}
-              disabled={rows.length === 0}
-              className="btn-primary flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
-            >
-              <IconRegister size={15} />
-              <span className="hidden sm:inline">Export to Excel</span>
-            </button>
           </div>
         }
       />
@@ -144,6 +170,8 @@ export default function TransactionsPage() {
           <PeriodFilter value={period} onChange={setPeriod} />
         </div>
 
+        <ExportBar rows={rows} allRows={bookings} onExport={exportTransactionsCsv} />
+
         <div className="overflow-hidden card">
           {loading ? (
             <TableSkeleton rows={6} cols={7} />
@@ -164,8 +192,19 @@ export default function TransactionsPage() {
                       <p className="min-w-0 truncate font-medium">
                         {b.full_name}
                       </p>
-                      <span className="shrink-0 font-semibold tabular-nums">
-                        {formatMoney(Number(b.total), b.currency)}
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold tabular-nums">
+                          {formatMoney(Number(b.total), b.currency)}
+                        </span>
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => setDeleting(b)}
+                            aria-label="Delete transaction"
+                            className="grid h-6 w-6 place-items-center rounded-md text-rose-600 hover:bg-rose-50"
+                          >
+                            <IconClose size={13} />
+                          </button>
+                        )}
                       </span>
                     </div>
                     <p className="truncate text-xs text-muted">
@@ -242,6 +281,9 @@ export default function TransactionsPage() {
                     <th className="sticky top-0 z-10 bg-surface-2 px-3 py-2.5 font-medium">
                       Status
                     </th>
+                    {isSuperAdmin && (
+                      <th className="sticky top-0 z-10 bg-surface-2 px-3 py-2.5 font-medium" />
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -301,6 +343,17 @@ export default function TransactionsPage() {
                           {b.is_paid ? "Paid" : "Unpaid"}
                         </span>
                       </td>
+                      {isSuperAdmin && (
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => setDeleting(b)}
+                            aria-label="Delete transaction"
+                            className="grid h-6 w-6 place-items-center rounded-md text-rose-600 hover:bg-rose-50"
+                          >
+                            <IconClose size={13} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -328,6 +381,7 @@ export default function TransactionsPage() {
                       {formatMoney(totals.tip, currency)}
                     </td>
                     <td className="px-3 py-2.5" />
+                    {isSuperAdmin && <td className="px-3 py-2.5" />}
                   </tr>
                 </tfoot>
               </table>
@@ -336,6 +390,29 @@ export default function TransactionsPage() {
           )}
         </div>
       </main>
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this transaction?"
+          tone="danger"
+          confirmLabel="Delete"
+          message={
+            <>
+              The{" "}
+              <span className="font-medium text-foreground">
+                {formatMoney(Number(deleting.total), deleting.currency)}
+              </span>{" "}
+              transaction for{" "}
+              <span className="font-medium text-foreground">
+                {deleting.full_name}
+              </span>{" "}
+              will be permanently deleted. This cannot be undone.
+            </>
+          }
+          onClose={() => setDeleting(null)}
+          onConfirm={handleDeleteTransaction}
+        />
+      )}
     </>
   );
 }
