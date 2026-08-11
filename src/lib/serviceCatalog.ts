@@ -13,6 +13,9 @@ export type ServiceCategoryInput = {
   active: boolean;
 };
 
+/** 'both' keeps a service on the salon menu and the home menu. */
+export type ServiceAvailability = "both" | "salon" | "home";
+
 export type ServiceInput = {
   category_id: string | null;
   name: string;
@@ -24,6 +27,8 @@ export type ServiceInput = {
   is_package: boolean;
   active: boolean;
   sort_order: number;
+  /** Where this service can be booked — see supabase/016_home_services.sql. */
+  available_at: ServiceAvailability;
 };
 
 export async function fetchServiceCategories(): Promise<ServiceCategory[]> {

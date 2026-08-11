@@ -50,6 +50,9 @@ export default function CalendarPage() {
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
   const [blocks, setBlocks] = useState<StaffBlock[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>(ALL);
+  const [locationFilter, setLocationFilter] = useState<
+    "all" | "salon" | "home"
+  >("all");
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "week">("day");
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -128,14 +131,30 @@ export default function CalendarPage() {
 
   const weekKeys = useMemo(() => weekDays.map(toDateKey), [weekDays]);
 
+  // Bookings made before home service existed have no value stored, and those
+  // were all in-salon.
+  const matchesLocation = useCallback(
+    (booking: Booking) =>
+      locationFilter === "all" ||
+      (booking.service_location ?? "salon") === locationFilter,
+    [locationFilter]
+  );
+
   const visible = useMemo(
     () =>
       resolved.filter((booking) => {
         if (!weekKeys.includes(booking.booking_date)) return false;
+        if (!matchesLocation(booking)) return false;
         if (selectedStaff === ALL) return true;
         return booking.staff_id === selectedStaff;
       }),
-    [resolved, weekKeys, selectedStaff]
+    [resolved, weekKeys, selectedStaff, matchesLocation]
+  );
+
+  // The day view gets the unwindowed list, so it needs the filter applied too.
+  const dayVisible = useMemo(
+    () => resolved.filter(matchesLocation),
+    [resolved, matchesLocation]
   );
 
   const visibleBlocks = useMemo(
@@ -426,11 +445,34 @@ export default function CalendarPage() {
         )}
 
         {/* Staff picker: all bookings, or one member's week */}
-        <StaffDropdown
-          staff={activeStaff}
-          value={selectedStaff}
-          onChange={setSelectedStaff}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <StaffDropdown
+            staff={activeStaff}
+            value={selectedStaff}
+            onChange={setSelectedStaff}
+          />
+          {/* Home visits need travel time between them, so seeing them on
+              their own is how you spot an impossible run of appointments. */}
+          <div className="flex gap-1.5">
+            {(["all", "salon", "home"] as const).map((option) => (
+              <button
+                key={option}
+                onClick={() => setLocationFilter(option)}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+                  locationFilter === option
+                    ? "bg-foreground text-white shadow-sm"
+                    : "border border-line text-foreground/70 hover:bg-background"
+                }`}
+              >
+                {option === "all"
+                  ? "Everywhere"
+                  : option === "salon"
+                  ? "In salon"
+                  : "Home service"}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {loading && <p className="text-sm text-muted">Loading…</p>}
 
@@ -448,14 +490,14 @@ export default function CalendarPage() {
           </span>
           {view === "day"
             ? "Drag an appointment to another time or team member to reassign it · Double-click an empty slot to book."
-            : "Drag an appointment to another day or time to reschedule · Double-click an empty slot to book."}
+            : "Drag an appointment to another day or time to reschedule · Switch to Day view to add a booking."}
         </p>
 
         {view === "day" ? (
           <StaffDayGrid
             date={cursor}
             staff={dayViewStaff}
-            bookings={resolved}
+            bookings={dayVisible}
             blocks={[...blocks, ...breakBlocks]}
             timeOff={timeOff}
             dayStart={dayStart}
@@ -480,7 +522,6 @@ export default function CalendarPage() {
             daysOff={daysOff}
             onMove={handleMove}
             onSelect={setSelected}
-            onCreate={(dateKey, minutes) => setCreating({ dateKey, minutes })}
             onSelectBlock={(block) => {
               // Shop-break bands are derived from Settings, not real rows.
               if (block.id.startsWith("break-")) return;

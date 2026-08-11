@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMinutes, parseTimeToMinutes, toDateKey } from "@/lib/format";
-import { IconPlus } from "./Icons";
 import type { Booking, StaffBlock } from "@/lib/types";
 
 const SLOT_MINUTES = 15;
@@ -72,7 +71,6 @@ export default function WeekTimeGrid({
   daysOff,
   onMove,
   onSelect,
-  onCreate,
   onSelectBlock,
   onSelectGroup,
 }: {
@@ -84,7 +82,6 @@ export default function WeekTimeGrid({
   daysOff: number[];
   onMove: (booking: Booking, dateKey: string, startMinutes: number) => void;
   onSelect: (booking: Booking) => void;
-  onCreate: (dateKey: string, startMinutes: number) => void;
   onSelectBlock: (block: StaffBlock) => void;
   onSelectGroup: (bookings: Booking[], startMinutes: number) => void;
 }) {
@@ -175,16 +172,9 @@ export default function WeekTimeGrid({
               const isToday = key === todayKey;
               const off = daysOff.includes(day.getDay());
               return (
-                <button
+                <div
                   key={key}
-                  type="button"
-                  onClick={() => onCreate(key, dayStart)}
-                  title={`Add an appointment on ${day.toLocaleDateString("en-US", {
-                    weekday: "long",
-                    month: "long",
-                    day: "numeric",
-                  })}`}
-                  className={`group/day ${columnClass} border-l border-line px-2 py-2.5 text-center transition-colors hover:bg-background`}
+                  className={`${columnClass} border-l border-line px-2 py-2.5 text-center`}
                 >
                   <p
                     className={`text-[10px] font-semibold uppercase tracking-wider ${
@@ -197,7 +187,7 @@ export default function WeekTimeGrid({
                     className={`mx-auto mt-1 grid h-8 w-8 place-items-center rounded-full text-sm font-semibold transition ${
                       isToday
                         ? "bg-foreground text-white shadow-sm"
-                        : "text-foreground group-hover/day:bg-foreground/[0.08]"
+                        : "text-foreground"
                     }`}
                   >
                     {day.getDate()}
@@ -207,7 +197,7 @@ export default function WeekTimeGrid({
                       Day off
                     </p>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -266,13 +256,6 @@ export default function WeekTimeGrid({
                     if (dragging) onMove(dragging, key, minutes);
                     setDragging(null);
                   }}
-                  onDoubleClick={(event) =>
-                    onCreate(
-                      key,
-                      minutesFromPointer(event.clientY, event.currentTarget)
-                    )
-                  }
-                  title="Double-click an empty slot to add a booking"
                   className={`group/col relative border-l border-line transition-colors ${columnClass} ${
                     off
                       ? "bg-foreground/[0.035]"
@@ -292,39 +275,6 @@ export default function WeekTimeGrid({
                       }}
                     />
                   ))}
-
-                  {/* Hover-to-add: a quiet "+" per hour, same action as the
-                      double-click shortcut, just visible so it's discoverable.
-                      Only the small button itself is clickable — the taller
-                      wrapper just reveals it on hover and passes clicks and
-                      double-clicks on its empty padding straight through. */}
-                  {hourMarks.map((minutes) => {
-                    const segmentEnd = Math.min(minutes + 60, dayEnd);
-                    if (segmentEnd <= minutes) return null;
-                    const top =
-                      ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT;
-                    const height =
-                      ((segmentEnd - minutes) / SLOT_MINUTES) * SLOT_HEIGHT;
-                    return (
-                      <div
-                        key={`add-${minutes}`}
-                        className="group/add absolute inset-x-0 z-[3] flex items-start justify-center pt-0.5"
-                        style={{ top, height }}
-                      >
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onCreate(key, minutes);
-                          }}
-                          title={`Add appointment at ${formatMinutes(minutes)}`}
-                          className="grid h-5 w-5 place-items-center rounded-full bg-foreground text-white opacity-0 shadow-sm outline-none transition-all duration-150 group-hover/add:opacity-100 hover:scale-110 focus-visible:opacity-100"
-                        >
-                          <IconPlus size={11} />
-                        </button>
-                      </div>
-                    );
-                  })}
 
                   {/* Now line */}
                   {showNowLine && key === todayKey && (

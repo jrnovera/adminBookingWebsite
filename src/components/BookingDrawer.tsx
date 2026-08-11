@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
+import HomeBadge from "./HomeBadge";
 import { IconClose, IconPencil } from "./Icons";
 import { rescheduleBooking, setBookingPaid, updateBookingStatus } from "@/lib/bookings";
 import { formatDateLong, formatMoney } from "@/lib/format";
@@ -170,7 +171,12 @@ export default function BookingDrawer({
       <aside className="animate-slide-in-right flex w-full max-w-sm flex-col overflow-y-auto bg-surface shadow-[var(--shadow-xl)]">
         <div className="flex items-start justify-between gap-3 px-6 pb-4 pt-6">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{booking.full_name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-lg font-semibold">
+                {booking.full_name}
+              </h2>
+              <HomeBadge location={booking.service_location} />
+            </div>
             <p className="truncate text-sm text-muted">{booking.email}</p>
             <p className="text-sm text-muted">{booking.mobile}</p>
             {booking.address && (
@@ -350,6 +356,11 @@ export default function BookingDrawer({
           {Number(booking.discount) > 0 && (
             <Row label="Discount">
               −{formatMoney(Number(booking.discount), booking.currency)}
+            </Row>
+          )}
+          {Number(booking.home_service_fee) > 0 && (
+            <Row label="Home service fee">
+              {formatMoney(Number(booking.home_service_fee), booking.currency)}
             </Row>
           )}
           <Row label="Tax">

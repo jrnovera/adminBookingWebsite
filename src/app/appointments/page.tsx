@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import HomeBadge from "@/components/HomeBadge";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconClock } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
@@ -11,7 +12,15 @@ import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
-import type { Booking, BookingStatus } from "@/lib/types";
+import type { Booking, BookingStatus, ServiceLocation } from "@/lib/types";
+
+const locationFilters: Array<ServiceLocation | "all"> = ["all", "salon", "home"];
+
+const locationLabels: Record<ServiceLocation | "all", string> = {
+  all: "Everywhere",
+  salon: "In salon",
+  home: "Home service",
+};
 
 const filters: Array<BookingStatus | "all"> = [
   "all",
@@ -35,17 +44,42 @@ export default function AppointmentsPage() {
   const toast = useToast();
   const { session } = useAuth();
   const actor = session?.user.email ?? null;
-  const [filter, setFilter] = useState<BookingStatus | "all">("all");
+  // `null` = the admin hasn't picked a filter yet, so fall back to whatever is
+  // most useful: bookings waiting on a decision, or everything when there are
+  // none. Derived rather than set in an effect so it settles as soon as the
+  // bookings land, and stops adjusting itself the moment a tab is clicked.
+  const [filter, setFilter] = useState<BookingStatus | "all" | null>(null);
   const [selected, setSelected] = useState<Booking | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const hasPending = useMemo(
+    () => bookings.some((booking) => booking.status === "pending"),
+    [bookings]
+  );
+  const activeFilter = filter ?? (hasPending ? "pending" : "all");
+
+  const [locationFilter, setLocationFilter] = useState<ServiceLocation | "all">(
+    "all"
+  );
+
   const visible = useMemo(
     () =>
-      filter === "all"
-        ? bookings
-        : bookings.filter((booking) => booking.status === filter),
-    [bookings, filter]
+      bookings.filter((booking) => {
+        if (activeFilter !== "all" && booking.status !== activeFilter) {
+          return false;
+        }
+        if (locationFilter === "all") return true;
+        // Bookings made before home service existed have no value stored, and
+        // those were all in-salon.
+        return (booking.service_location ?? "salon") === locationFilter;
+      }),
+    [bookings, activeFilter, locationFilter]
+  );
+
+  const homeCount = useMemo(
+    () => bookings.filter((b) => b.service_location === "home").length,
+    [bookings]
   );
 
   async function changeStatus(booking: Booking, status: BookingStatus) {
@@ -86,13 +120,32 @@ export default function AppointmentsPage() {
         title="Appointments"
         subtitle={`${visible.length} of ${bookings.length} bookings`}
         action={
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {locationFilters.map((option) => (
+              <button
+                key={option}
+                onClick={() => setLocationFilter(option)}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+                  locationFilter === option
+                    ? "bg-foreground text-white shadow-sm"
+                    : "border border-line text-foreground/70 hover:bg-background"
+                }`}
+              >
+                {locationLabels[option]}
+                {option === "home" && homeCount > 0 && (
+                  <span className="ms-1.5 tabular-nums opacity-70">
+                    {homeCount}
+                  </span>
+                )}
+              </button>
+            ))}
+            <span className="mx-1 h-5 w-px bg-line" aria-hidden />
             {filters.map((option) => (
               <button
                 key={option}
                 onClick={() => setFilter(option)}
                 className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium capitalize transition-all duration-150 ${
-                  filter === option
+                  activeFilter === option
                     ? "bg-foreground text-white shadow-sm"
                     : "border border-line text-foreground/70 hover:bg-background"
                 }`}
@@ -151,7 +204,12 @@ export default function AppointmentsPage() {
                             {booking.mobile}
                           </p>
                         </td>
-                        <td className="px-5 py-3.5">{booking.service_name}</td>
+                        <td className="px-5 py-3.5">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            {booking.service_name}
+                            <HomeBadge location={booking.service_location} />
+                          </span>
+                        </td>
                         <td className="px-5 py-3.5">{booking.staff_name}</td>
                         <td className="px-5 py-3.5">
                           <p>{formatDateLong(booking.booking_date)}</p>
@@ -185,7 +243,10 @@ export default function AppointmentsPage() {
                         <p className="min-w-0 truncate font-medium">
                           {booking.full_name}
                         </p>
-                        <StatusBadge status={booking.status} />
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <HomeBadge location={booking.service_location} />
+                          <StatusBadge status={booking.status} />
+                        </span>
                       </div>
                       <p className="truncate text-xs text-muted">
                         {booking.service_name} · {booking.staff_name}

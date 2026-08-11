@@ -38,6 +38,7 @@ export default function ServiceItemForm({
     String(service?.sort_order ?? "0")
   );
   const [active, setActive] = useState(service?.active ?? true);
+  const [availableAt, setAvailableAt] = useState(service?.available_at ?? "both");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { session } = useAuth();
@@ -59,6 +60,7 @@ export default function ServiceItemForm({
       is_package: isPackage,
       active,
       sort_order: Math.round(Number(sortOrder) || 0),
+      available_at: availableAt,
     };
 
     try {
@@ -104,6 +106,23 @@ export default function ServiceItemForm({
             onClick={() => setIsPackage(true)}
           />
         </div>
+
+        <label className="block">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-muted">
+            Bookable at
+          </span>
+          <select
+            value={availableAt}
+            onChange={(event) =>
+              setAvailableAt(event.target.value as typeof availableAt)
+            }
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-foreground"
+          >
+            <option value="both">Salon and home</option>
+            <option value="salon">Salon only</option>
+            <option value="home">Home service only</option>
+          </select>
+        </label>
 
         <Field label="Name" value={name} onChange={setName} required />
         <Field label="Name (Arabic)" value={nameAr} onChange={setNameAr} />

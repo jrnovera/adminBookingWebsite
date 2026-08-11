@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { fetchBookings } from "@/lib/bookings";
 import { fetchProducts, stockLevel } from "@/lib/inventory";
 import { formatDateLong, toDateKey } from "@/lib/format";
-import type { Booking, Product } from "@/lib/types";
+import { useBookings } from "@/lib/useBookings";
+import type { Product } from "@/lib/types";
 
 type Note = {
   id: string;
@@ -21,22 +21,63 @@ const toneStyles: Record<Note["tone"], string> = {
   primary: "bg-primary-100 text-primary-dark",
 };
 
+/** A booking counts as "just came in" for this long after it was created. */
+const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export default function Notifications() {
   const [open, setOpen] = useState(false);
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  // Shared hook so the bell picks up realtime inserts like every other page.
+  const { bookings } = useBookings();
   const [products, setProducts] = useState<Product[]>([]);
 
+  // Kept in state and ticked rather than read during render: notes derived from
+  // the current time would otherwise freeze at whatever moment the dashboard
+  // was opened, so a booking would sit under "New booking" indefinitely and the
+  // "today" grouping would be wrong for anyone who leaves the tab open overnight.
+  const [now, setNow] = useState(() => Date.now());
+
   useEffect(() => {
-    fetchBookings().then(setBookings, () => {});
     fetchProducts().then(setProducts, () => {});
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const notes = useMemo(() => {
-    const today = toDateKey(new Date());
+    const today = toDateKey(new Date(now));
     const list: Note[] = [];
+    // One note per booking — a brand-new pending booking would otherwise show
+    // up twice (once as "new", once as "needs confirmation").
+    const seen = new Set<string>();
+
+    // Anything booked in the last day, whatever its status, so a fresh booking
+    // from the public site is always visible here — not just pending ones.
+    const recent = bookings
+      .filter(
+        (booking) =>
+          now - new Date(booking.created_at).getTime() < RECENT_WINDOW_MS
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+    for (const booking of recent) {
+      seen.add(booking.id);
+      list.push({
+        id: `new-${booking.id}`,
+        href: "/appointments",
+        title: `New booking: ${booking.full_name}`,
+        detail: `${booking.service_name} · ${formatDateLong(
+          booking.booking_date
+        )} ${booking.booking_time}`,
+        tone: booking.status === "pending" ? "amber" : "primary",
+      });
+    }
 
     for (const booking of bookings) {
+      if (seen.has(booking.id)) continue;
       if (booking.status === "pending" && booking.booking_date >= today) {
+        seen.add(booking.id);
         list.push({
           id: `pending-${booking.id}`,
           href: "/appointments",
@@ -50,6 +91,7 @@ export default function Notifications() {
     }
 
     for (const booking of bookings) {
+      if (seen.has(booking.id)) continue;
       if (booking.booking_date === today && booking.status === "confirmed") {
         list.push({
           id: `today-${booking.id}`,
@@ -77,7 +119,7 @@ export default function Notifications() {
     }
 
     return list;
-  }, [bookings, products]);
+  }, [bookings, products, now]);
 
   return (
     <div className="relative">

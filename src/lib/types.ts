@@ -1,3 +1,5 @@
+export type ServiceLocation = "salon" | "home";
+
 export type BookingStatus =
   | "pending"
   | "confirmed"
@@ -28,6 +30,10 @@ export type Booking = {
   notes: string | null;
   voucher_code: string | null;
   locale: string;
+  /** Where the appointment happens — see booking-artisan/supabase/004_home_service.sql. */
+  service_location: ServiceLocation;
+  /** Flat call-out fee stamped by the insert trigger; 0 for salon bookings. */
+  home_service_fee: number;
   status: BookingStatus;
   is_paid: boolean;
   payment_method: string | null;
@@ -133,6 +139,8 @@ export type Service = {
   is_package: boolean;
   active: boolean;
   sort_order: number;
+  /** Where this service can be booked — see supabase/016_home_services.sql. */
+  available_at: "both" | "salon" | "home";
 };
 
 export type ShopSettings = {
@@ -149,4 +157,8 @@ export type ShopSettings = {
   close_minutes: number;
   break_start_minutes: number | null;
   break_end_minutes: number | null;
+  /** Whether the booking site offers home visits at all. */
+  home_service_enabled: boolean;
+  /** Flat call-out fee added to every home booking. */
+  home_service_fee: number;
 };

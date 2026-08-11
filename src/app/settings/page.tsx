@@ -11,6 +11,12 @@ import {
 } from "@/lib/settings";
 import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
+import {
+  getPushStatus,
+  subscribeToPush,
+  unsubscribeFromPush,
+  type PushStatus,
+} from "@/lib/push";
 import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
@@ -32,10 +38,64 @@ export default function SettingsPage() {
   const [hasBreak, setHasBreak] = useState(false);
   const [breakStart, setBreakStart] = useState(13 * 60);
   const [breakEnd, setBreakEnd] = useState(14 * 60);
+  const [homeServiceEnabled, setHomeServiceEnabled] = useState(false);
+  const [homeServiceFee, setHomeServiceFee] = useState("0");
 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [shopStatus, setShopStatus] = useState<Status>(null);
+
+  const [pushStatus, setPushStatus] = useState<PushStatus>("not-subscribed");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPushStatus().then(setPushStatus, () => setPushStatus("unsupported"));
+  }, []);
+
+  async function handleEnablePush() {
+    if (!session?.user.id) return;
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await subscribeToPush(session.user.id);
+      setPushStatus("subscribed");
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: "Enabled push notifications on this device",
+      });
+    } catch (err) {
+      setPushError(
+        err instanceof Error ? err.message : "Could not enable notifications"
+      );
+      setPushStatus(await getPushStatus());
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function handleDisablePush() {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await unsubscribeFromPush();
+      setPushStatus("not-subscribed");
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: "Disabled push notifications on this device",
+      });
+    } catch (err) {
+      setPushError(
+        err instanceof Error ? err.message : "Could not disable notifications"
+      );
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   // null until edited, so the signed-in address shows without an effect.
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
@@ -64,6 +124,8 @@ export default function SettingsPage() {
             setBreakStart(row.break_start_minutes as number);
             setBreakEnd(row.break_end_minutes as number);
           }
+          setHomeServiceEnabled(row.home_service_enabled ?? false);
+          setHomeServiceFee(String(row.home_service_fee ?? 0));
         }
         setLoading(false);
       },
@@ -93,6 +155,8 @@ export default function SettingsPage() {
         close_minutes: closeMinutes,
         break_start_minutes: hasBreak ? breakStart : null,
         break_end_minutes: hasBreak ? breakEnd : null,
+        home_service_enabled: homeServiceEnabled,
+        home_service_fee: Math.max(0, Number(homeServiceFee) || 0),
       });
       reload();
       setShopStatus({ kind: "ok", message: "Business details saved." });
@@ -107,7 +171,9 @@ export default function SettingsPage() {
           hasBreak
             ? ` · Break ${formatMinutes(breakStart)}–${formatMinutes(breakEnd)}`
             : ""
-        } · Tax ${taxRate}%`,
+        } · Tax ${taxRate}% · Home service ${
+          homeServiceEnabled ? `on (${homeServiceFee})` : "off"
+        }`,
       });
     } catch (err) {
       setShopStatus({
@@ -253,6 +319,35 @@ export default function SettingsPage() {
 
               <div className="border-t border-line pt-4">
                 <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">
+                  Home service
+                </p>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={homeServiceEnabled}
+                    onChange={(e) => setHomeServiceEnabled(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--primary)]"
+                  />
+                  Let clients book a visit at their own address
+                </label>
+                {homeServiceEnabled && (
+                  <div className="mt-3 sm:max-w-[50%]">
+                    <Field
+                      label={`Call-out fee (${currency})`}
+                      value={homeServiceFee}
+                      onChange={setHomeServiceFee}
+                      type="number"
+                    />
+                    <p className="mt-1.5 text-xs text-muted">
+                      Added to every home booking, before tax. Set 0 to charge
+                      nothing extra.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-line pt-4">
+                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">
                   Opening hours
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -312,6 +407,54 @@ export default function SettingsPage() {
             </form>
           </Section>
         )}
+
+        <Section
+          title="Push notifications"
+          description="Get an alert on this device for new bookings — even when the dashboard isn't open."
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  pushStatus === "subscribed"
+                    ? "bg-emerald-500"
+                    : pushStatus === "denied"
+                    ? "bg-rose-500"
+                    : "bg-foreground/20"
+                }`}
+              />
+              <p className="text-sm">
+                {pushStatus === "unsupported" &&
+                  "This browser doesn't support push notifications."}
+                {pushStatus === "denied" &&
+                  "Blocked — allow notifications for this site in your browser settings, then reload."}
+                {pushStatus === "not-subscribed" &&
+                  "Notifications are off on this device."}
+                {pushStatus === "subscribed" &&
+                  "Notifications are on for this device."}
+              </p>
+            </div>
+
+            {pushStatus === "subscribed" ? (
+              <button
+                onClick={handleDisablePush}
+                disabled={pushBusy}
+                className="btn-ghost px-4 py-2 text-sm hover:bg-background disabled:opacity-60"
+              >
+                {pushBusy ? "Turning off…" : "Turn off"}
+              </button>
+            ) : (
+              <button
+                onClick={handleEnablePush}
+                disabled={pushBusy || pushStatus === "unsupported" || pushStatus === "denied"}
+                className="btn-primary px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
+              >
+                {pushBusy ? "Turning on…" : "Turn on"}
+              </button>
+            )}
+          </div>
+          {pushError && <p className="mt-3 text-sm text-rose-700">{pushError}</p>}
+        </Section>
 
         <Section
           title="Account email"
