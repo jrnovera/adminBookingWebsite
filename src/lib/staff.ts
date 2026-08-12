@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "./supabase";
-import type { Staff, StaffTimeOff } from "./types";
+import type { SalaryType, Staff, StaffTimeOff } from "./types";
 
 export const weekdayLabels = [
   "Sun",
@@ -87,6 +87,10 @@ export type StaffInput = {
   work_start: string;
   work_end: string;
   days_off: number[];
+  avatar_url?: string | null;
+  salary_type?: SalaryType;
+  base_salary?: number;
+  hourly_rate?: number;
 };
 
 export async function createStaff(input: StaffInput): Promise<string> {

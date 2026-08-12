@@ -2,6 +2,7 @@ import {
   IconBox,
   IconCalendar,
   IconChart,
+  IconClipboardCheck,
   IconClock,
   IconDashboard,
   IconPieChart,
@@ -10,6 +11,7 @@ import {
   IconSettings,
   IconTag,
   IconUsers,
+  IconWallet,
 } from "./Icons";
 import type { UserRole } from "@/lib/roles";
 
@@ -64,6 +66,18 @@ export const navGroups: NavGroup[] = [
         href: "/staff",
         label: "Team",
         icon: IconScissors,
+        restrictedFrom: ["staff"],
+      },
+      {
+        href: "/attendance",
+        label: "Attendance",
+        icon: IconClipboardCheck,
+        restrictedFrom: ["staff"],
+      },
+      {
+        href: "/payroll",
+        label: "Payroll",
+        icon: IconWallet,
         restrictedFrom: ["staff"],
       },
       {

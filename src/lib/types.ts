@@ -68,6 +68,59 @@ export type Staff = {
   work_end: string;
   days_off: number[];
   avatar_url: string | null;
+  /** Which of the two pay fields below is actually used for this person. */
+  salary_type: SalaryType;
+  /** Monthly basic pay — used when salary_type is 'monthly'. */
+  base_salary: number;
+  /** Per-hour rate — used when salary_type is 'hourly'. */
+  hourly_rate: number;
+};
+
+export type SalaryType = "monthly" | "hourly";
+
+export type AttendanceStatus =
+  | "present"
+  | "late"
+  | "half_day"
+  | "on_leave"
+  | "absent";
+
+export type StaffAttendance = {
+  id: string;
+  created_at: string;
+  staff_id: string;
+  attendance_date: string;
+  status: AttendanceStatus;
+  time_in: string | null;
+  time_out: string | null;
+  notes: string | null;
+};
+
+export type IncentiveKind = "bonus" | "commission" | "deduction";
+
+export type StaffIncentive = {
+  id: string;
+  created_at: string;
+  staff_id: string;
+  /** First day of the month this line item counts toward, e.g. "2026-08-01". */
+  period_month: string;
+  label: string;
+  amount: number;
+  kind: IncentiveKind;
+  notes: string | null;
+};
+
+export type PayrollRun = {
+  id: string;
+  created_at: string;
+  staff_id: string;
+  period_month: string;
+  gross_pay: number;
+  incentives_total: number;
+  deductions_total: number;
+  net_pay: number;
+  paid_at: string;
+  paid_by: string | null;
 };
 
 export type StaffTimeOff = {

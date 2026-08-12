@@ -9,7 +9,9 @@ export type ActivityEntity =
   | "promo"
   | "service"
   | "service_category"
-  | "settings";
+  | "settings"
+  | "attendance"
+  | "payroll";
 
 export type Activity = {
   id: string;

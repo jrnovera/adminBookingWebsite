@@ -40,6 +40,15 @@ export default function StaffForm({
   const [workEnd, setWorkEnd] = useState(staff?.work_end ?? "18:00");
   const [daysOff, setDaysOff] = useState<number[]>(staff?.days_off ?? [0]);
   const [avatarUrl, setAvatarUrl] = useState(staff?.avatar_url ?? null);
+  const [salaryType, setSalaryType] = useState<"monthly" | "hourly">(
+    staff?.salary_type ?? "monthly"
+  );
+  const [baseSalary, setBaseSalary] = useState(
+    String(staff?.base_salary ?? 0)
+  );
+  const [hourlyRate, setHourlyRate] = useState(
+    String(staff?.hourly_rate ?? 0)
+  );
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +88,9 @@ export default function StaffForm({
       work_end: workEnd,
       days_off: daysOff,
       avatar_url: avatarUrl,
+      salary_type: salaryType,
+      base_salary: Math.max(0, Number(baseSalary) || 0),
+      hourly_rate: Math.max(0, Number(hourlyRate) || 0),
     };
 
     try {
@@ -225,6 +237,49 @@ export default function StaffForm({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="border-t border-line pt-3">
+          <span className="mb-1.5 block text-xs uppercase tracking-wide text-muted">
+            Pay setup
+          </span>
+          <div className="flex gap-1.5">
+            {(["monthly", "hourly"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSalaryType(type)}
+                className={`rounded-lg px-3 py-1.5 text-xs capitalize transition ${
+                  salaryType === type
+                    ? "bg-foreground text-white"
+                    : "border border-line hover:bg-background"
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2">
+            {salaryType === "monthly" ? (
+              <Text
+                label="Monthly basic pay"
+                value={baseSalary}
+                onChange={setBaseSalary}
+                type="number"
+              />
+            ) : (
+              <Text
+                label="Hourly rate"
+                value={hourlyRate}
+                onChange={setHourlyRate}
+                type="number"
+              />
+            )}
+          </div>
+          <p className="mt-1.5 text-xs text-muted">
+            Used by Payroll to compute pay from Attendance — see the
+            Attendance and Payroll pages.
+          </p>
         </div>
 
         <label className="flex items-center gap-2 text-sm">

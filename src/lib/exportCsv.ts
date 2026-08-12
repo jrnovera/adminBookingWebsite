@@ -1,4 +1,5 @@
 import type { Booking } from "./types";
+import type { StaffPayrollSummary } from "./payroll";
 
 function toCsvValue(value: string | number) {
   const text = String(value);
@@ -118,4 +119,46 @@ export function exportBookingsCsv(rows: Booking[]) {
       .join(",")
   );
   downloadCsv("bookings", header, lines);
+}
+
+export function exportPayrollCsv(rows: StaffPayrollSummary[], monthKey: string) {
+  const header = [
+    "Staff",
+    "Pay type",
+    "Present",
+    "Late",
+    "Half day",
+    "On leave",
+    "Absent",
+    "Unmarked",
+    "Hours worked",
+    "Base pay",
+    "Bonus",
+    "Commission",
+    "Deductions",
+    "Net pay",
+    "Paid",
+  ];
+  const lines = rows.map((r) =>
+    [
+      r.staff.name,
+      r.staff.salary_type,
+      r.statusCounts.present,
+      r.statusCounts.late,
+      r.statusCounts.half_day,
+      r.statusCounts.on_leave,
+      r.statusCounts.absent,
+      r.unmarkedDays,
+      r.hoursWorked.toFixed(2),
+      r.basePay.toFixed(2),
+      r.bonusTotal.toFixed(2),
+      r.commissionTotal.toFixed(2),
+      r.deductionTotal.toFixed(2),
+      r.netPay.toFixed(2),
+      r.paid ? "Yes" : "No",
+    ]
+      .map(toCsvValue)
+      .join(",")
+  );
+  downloadCsv(`payroll-${monthKey}`, header, lines);
 }

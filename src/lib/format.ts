@@ -46,6 +46,29 @@ export function addDays(date: Date, days: number) {
   return result;
 }
 
+export function toMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function addMonths(monthKey: string, delta: number) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const result = new Date(year, month - 1 + delta, 1);
+  return toMonthKey(result);
+}
+
+export function monthLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+export function daysInMonth(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
 export function formatDateLong(dateKey: string) {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
