@@ -12,12 +12,6 @@ import {
 import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { deleteAllBookings } from "@/lib/bookings";
-import {
-  getPushStatus,
-  subscribeToPush,
-  unsubscribeFromPush,
-  type PushStatus,
-} from "@/lib/push";
 import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
@@ -43,22 +37,15 @@ export default function SettingsPage() {
   const [breakEnd, setBreakEnd] = useState(14 * 60);
   const [homeServiceEnabled, setHomeServiceEnabled] = useState(false);
   const [homeServiceFee, setHomeServiceFee] = useState("0");
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [shopStatus, setShopStatus] = useState<Status>(null);
 
-  const [pushStatus, setPushStatus] = useState<PushStatus>("not-subscribed");
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushError, setPushError] = useState<string | null>(null);
-
   const [wipeConfirmText, setWipeConfirmText] = useState("");
   const [wiping, setWiping] = useState(false);
   const [wipeStatus, setWipeStatus] = useState<Status>(null);
-
-  useEffect(() => {
-    getPushStatus().then(setPushStatus, () => setPushStatus("unsupported"));
-  }, []);
 
   async function handleDeleteAllBookings() {
     if (wipeConfirmText !== "DELETE") return;
@@ -90,49 +77,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleEnablePush() {
-    if (!session?.user.id) return;
-    setPushBusy(true);
-    setPushError(null);
-    try {
-      await subscribeToPush(session.user.id);
-      setPushStatus("subscribed");
-      logActivity({
-        actor,
-        entity: "settings",
-        action: "edited",
-        summary: "Enabled push notifications on this device",
-      });
-    } catch (err) {
-      setPushError(
-        err instanceof Error ? err.message : "Could not enable notifications"
-      );
-      setPushStatus(await getPushStatus());
-    } finally {
-      setPushBusy(false);
-    }
-  }
-
-  async function handleDisablePush() {
-    setPushBusy(true);
-    setPushError(null);
-    try {
-      await unsubscribeFromPush();
-      setPushStatus("not-subscribed");
-      logActivity({
-        actor,
-        entity: "settings",
-        action: "edited",
-        summary: "Disabled push notifications on this device",
-      });
-    } catch (err) {
-      setPushError(
-        err instanceof Error ? err.message : "Could not disable notifications"
-      );
-    } finally {
-      setPushBusy(false);
-    }
-  }
 
   // null until edited, so the signed-in address shows without an effect.
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
@@ -163,6 +107,7 @@ export default function SettingsPage() {
           }
           setHomeServiceEnabled(row.home_service_enabled ?? false);
           setHomeServiceFee(String(row.home_service_fee ?? 0));
+          setNotificationSoundEnabled(row.notification_sound_enabled ?? true);
         }
         setLoading(false);
       },
@@ -194,6 +139,7 @@ export default function SettingsPage() {
         break_end_minutes: hasBreak ? breakEnd : null,
         home_service_enabled: homeServiceEnabled,
         home_service_fee: Math.max(0, Number(homeServiceFee) || 0),
+        notification_sound_enabled: notificationSoundEnabled,
       });
       reload();
       setShopStatus({ kind: "ok", message: "Business details saved." });
@@ -446,51 +392,39 @@ export default function SettingsPage() {
         )}
 
         <Section
-          title="Push notifications"
-          description="Get an alert on this device for new bookings — even when the dashboard isn't open."
+          title="Notifications"
+          description="Control how you receive alerts about new bookings."
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  pushStatus === "subscribed"
-                    ? "bg-emerald-500"
-                    : pushStatus === "denied"
-                    ? "bg-rose-500"
-                    : "bg-foreground/20"
-                }`}
-              />
-              <p className="text-sm">
-                {pushStatus === "unsupported" &&
-                  "This browser doesn't support push notifications."}
-                {pushStatus === "denied" &&
-                  "Blocked — allow notifications for this site in your browser settings, then reload."}
-                {pushStatus === "not-subscribed" &&
-                  "Notifications are off on this device."}
-                {pushStatus === "subscribed" &&
-                  "Notifications are on for this device."}
-              </p>
-            </div>
-
-            {pushStatus === "subscribed" ? (
-              <button
-                onClick={handleDisablePush}
-                disabled={pushBusy}
-                className="btn-ghost px-4 py-2 text-sm hover:bg-background disabled:opacity-60"
-              >
-                {pushBusy ? "Turning off…" : "Turn off"}
-              </button>
-            ) : (
-              <button
-                onClick={handleEnablePush}
-                disabled={pushBusy || pushStatus === "unsupported" || pushStatus === "denied"}
-                className="btn-primary px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-50"
-              >
-                {pushBusy ? "Turning on…" : "Turn on"}
-              </button>
-            )}
-          </div>
-          {pushError && <p className="mt-3 text-sm text-rose-700">{pushError}</p>}
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={notificationSoundEnabled}
+              onChange={(e) => {
+                setNotificationSoundEnabled(e.target.checked);
+                // Also save immediately
+                saveSettings({
+                  notification_sound_enabled: e.target.checked,
+                }).then(
+                  () => {
+                    logActivity({
+                      actor,
+                      entity: "settings",
+                      action: "edited",
+                      summary: `${e.target.checked ? "Enabled" : "Disabled"} notification sound`,
+                    });
+                  },
+                  (err) => {
+                    setShopStatus({
+                      kind: "error",
+                      message: err instanceof Error ? err.message : "Save failed",
+                    });
+                  }
+                );
+              }}
+              className="h-4 w-4 accent-[var(--primary)]"
+            />
+            Play sound when new bookings arrive
+          </label>
         </Section>
 
         <Section

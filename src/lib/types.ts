@@ -161,4 +161,6 @@ export type ShopSettings = {
   home_service_enabled: boolean;
   /** Flat call-out fee added to every home booking. */
   home_service_fee: number;
+  /** Whether to play a notification sound when new bookings arrive. */
+  notification_sound_enabled: boolean;
 };

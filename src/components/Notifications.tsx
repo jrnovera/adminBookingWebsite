@@ -5,6 +5,7 @@ import Link from "next/link";
 import { fetchProducts, stockLevel } from "@/lib/inventory";
 import { formatDateLong, toDateKey } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
+import { useShop } from "@/lib/shop";
 import { playNotificationSound } from "@/lib/notificationSound";
 import type { Product } from "@/lib/types";
 
@@ -29,6 +30,7 @@ export default function Notifications() {
   const [open, setOpen] = useState(false);
   // Shared hook so the bell picks up realtime inserts like every other page.
   const { bookings } = useBookings();
+  const { settings } = useShop();
   const [products, setProducts] = useState<Product[]>([]);
   const prevNotificationCountRef = useRef<number>(0);
 
@@ -130,12 +132,17 @@ export default function Notifications() {
     const prevCount = prevNotificationCountRef.current;
 
     // Only play sound if notifications increased (not on initial mount)
-    if (prevCount > 0 && currentCount > prevCount) {
+    // and if notification sound is enabled in settings
+    if (
+      prevCount > 0 &&
+      currentCount > prevCount &&
+      settings?.notification_sound_enabled !== false
+    ) {
       playNotificationSound();
     }
 
     prevNotificationCountRef.current = currentCount;
-  }, [notes.length]);
+  }, [notes.length, settings?.notification_sound_enabled]);
 
   return (
     <div className="relative">
