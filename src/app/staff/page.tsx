@@ -12,13 +12,15 @@ import { useToast } from "@/components/Toast";
 import {
   deleteStaff,
   fetchStaff,
+  fetchStaffCategoryMap,
   fetchTimeOff,
   weekdayLabels,
 } from "@/lib/staff";
+import { fetchServiceCategories } from "@/lib/serviceCatalog";
 import { fetchBookings, reassignStaffBookings } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
-import type { Staff, StaffTimeOff } from "@/lib/types";
+import type { ServiceCategory, Staff, StaffTimeOff } from "@/lib/types";
 import { useRequireRole } from "@/lib/useRequireRole";
 
 export default function StaffPage() {
@@ -28,6 +30,10 @@ export default function StaffPage() {
   const actor = session?.user.email ?? null;
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [staffCategoryMap, setStaffCategoryMap] = useState<
+    Map<string, Set<string>>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Staff | "new" | null>(null);
@@ -35,10 +41,17 @@ export default function StaffPage() {
   const [removing, setRemoving] = useState<Staff | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([fetchStaff(), fetchTimeOff()]).then(
-      ([staffRows, timeOffRows]) => {
+    Promise.all([
+      fetchStaff(),
+      fetchTimeOff(),
+      fetchServiceCategories(),
+      fetchStaffCategoryMap(),
+    ]).then(
+      ([staffRows, timeOffRows, categoryRows, categoryMap]) => {
         setStaff(staffRows);
         setTimeOff(timeOffRows);
+        setCategories(categoryRows.filter((c) => c.active));
+        setStaffCategoryMap(categoryMap);
         setError(null);
         setLoading(false);
       },
@@ -201,6 +214,16 @@ export default function StaffPage() {
                     <Row label="Time off">
                       {upcoming.length ? `${upcoming.length} booked` : "None"}
                     </Row>
+                    <Row label="Expertise">
+                      {(() => {
+                        const offered = staffCategoryMap.get(member.id);
+                        if (!offered || offered.size === 0) return "Any service";
+                        const names = categories
+                          .filter((c) => offered.has(c.id))
+                          .map((c) => c.name);
+                        return names.length ? names.join(", ") : "Any service";
+                      })()}
+                    </Row>
                     {member.email && <Row label="Email">{member.email}</Row>}
                     {member.phone && <Row label="Phone">{member.phone}</Row>}
                   </dl>
@@ -237,6 +260,12 @@ export default function StaffPage() {
       {editing && (
         <StaffForm
           staff={editing === "new" ? null : editing}
+          categories={categories}
+          staffCategoryIds={
+            editing === "new"
+              ? []
+              : [...(staffCategoryMap.get(editing.id) ?? [])]
+          }
           onClose={() => setEditing(null)}
           onSaved={() => {
             const wasNew = editing === "new";

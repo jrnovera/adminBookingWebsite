@@ -268,6 +268,22 @@ export function IconPencil(props: IconProps) {
   );
 }
 
+export function IconExpand(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5" />
+    </Svg>
+  );
+}
+
+export function IconCollapse(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 9h5V4M15 4v5h5M20 15h-5v5M9 20v-5H4" />
+    </Svg>
+  );
+}
+
 export function IconBan(props: IconProps) {
   return (
     <Svg {...props}>

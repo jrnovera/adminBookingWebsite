@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import PageHeader from "@/components/PageHeader";
 import ServiceItemForm from "@/components/ServiceItemForm";
 import ServiceCategoryForm from "@/components/ServiceCategoryForm";
@@ -251,7 +252,10 @@ export default function ServicesPage() {
                 {visible.map((item) => (
                   <li key={item.id} className="flex flex-col gap-1.5 px-4 py-3.5">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 flex-1 font-medium">{item.name}</p>
+                      <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <ServiceThumb src={item.image_url} />
+                        <p className="min-w-0 flex-1 font-medium">{item.name}</p>
+                      </span>
                       <span
                         className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                           item.is_package
@@ -310,7 +314,12 @@ export default function ServicesPage() {
                 <tbody>
                   {visible.map((item) => (
                     <tr key={item.id} className="border-b border-line last:border-0">
-                      <td className="px-4 py-3 font-medium">{item.name}</td>
+                      <td className="px-4 py-3 font-medium">
+                        <span className="flex items-center gap-2.5">
+                          <ServiceThumb src={item.image_url} />
+                          {item.name}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-muted">{categoryName(item.category_id)}</td>
                       <td className="px-4 py-3">
                         <span
@@ -431,6 +440,26 @@ export default function ServicesPage() {
         />
       )}
     </>
+  );
+}
+
+function ServiceThumb({ src }: { src: string | null }) {
+  if (!src) {
+    return (
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-background text-[9px] text-muted ring-1 ring-line">
+        No photo
+      </span>
+    );
+  }
+  return (
+    <Image
+      src={src}
+      alt=""
+      width={36}
+      height={36}
+      unoptimized
+      className="h-9 w-9 shrink-0 rounded-lg object-cover ring-1 ring-line"
+    />
   );
 }
 

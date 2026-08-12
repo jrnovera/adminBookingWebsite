@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Avatar from "./Avatar";
 import { formatMinutes, parseTimeToMinutes, toDateKey } from "@/lib/format";
 import { isStaffOffOn } from "@/lib/staff";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import type { Booking, Staff, StaffBlock, StaffTimeOff } from "@/lib/types";
 
 const SLOT_MINUTES = 15;
 const SNAP_MINUTES = 15;
-const SLOT_HEIGHT = 24;
+// A fixed, comfortably-readable row height rather than one shrunk to force
+// the whole day into the viewport without scrolling — that made every
+// appointment under ~45 minutes render too thin to read its own name. A
+// busy 12-hour day now scrolls vertically (the staff header stays pinned),
+// same as Google Calendar or Fresha; every card stays legible regardless of
+// how long the day is. Slightly taller on tablet/desktop, where there's
+// room to spare, than on a phone.
+const SLOT_HEIGHT_DESKTOP = 22;
+const SLOT_HEIGHT_MOBILE = 18;
 const AXIS_WIDTH = 64;
 
 /**
@@ -68,16 +77,13 @@ export default function StaffDayGrid({
     staffId: string;
     minutes: number;
   } | null>(null);
-  const [now, setNow] = useState(() => new Date());
 
   const dateKey = toDateKey(date);
   const rows = Math.max(1, Math.ceil((dayEnd - dayStart) / SLOT_MINUTES));
-  const gridHeight = rows * SLOT_HEIGHT;
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
+  const isTablet = useMediaQuery("(min-width: 640px)");
+  const slotHeight = isTablet ? SLOT_HEIGHT_DESKTOP : SLOT_HEIGHT_MOBILE;
+  const gridHeight = rows * slotHeight;
 
   // Half-hour marks so the axis reads "9:00, 9:30, 10:00…" instead of
   // jumping a full hour at a time — 30 minutes is the shortest a service on
@@ -115,15 +121,9 @@ export default function StaffDayGrid({
     return map;
   }, [blocks, dateKey]);
 
-  const isToday = dateKey === toDateKey(now);
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const showNowLine =
-    isToday && nowMinutes >= dayStart && nowMinutes <= dayEnd;
-  const nowTop = ((nowMinutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT;
-
   function minutesFromPointer(clientY: number, element: HTMLElement) {
     const rect = element.getBoundingClientRect();
-    const raw = dayStart + ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
+    const raw = dayStart + ((clientY - rect.top) / slotHeight) * SLOT_MINUTES;
     const snapped = Math.round(raw / SNAP_MINUTES) * SNAP_MINUTES;
     return Math.min(Math.max(snapped, dayStart), dayEnd - SNAP_MINUTES);
   }
@@ -149,12 +149,13 @@ export default function StaffDayGrid({
     : "w-[11rem] shrink-0";
 
   return (
-    <div className="card overflow-hidden">
-      {/* The grid owns its own scrollport (both axes). Without a bounded
-          height the browser gives this box no vertical overflow, so the
-          staff header below can never actually stick and instead slides up
-          under the page chrome. */}
-      <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+    <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Sized by the flex parent so it uses whatever room the page gives
+          it, but rows keep a fixed, readable height (see slotHeight above)
+          — a long day scrolls vertically rather than squeezing every card
+          down to illegibility. The staff header stays pinned while it
+          scrolls, in both directions. */}
+      <div className="min-h-0 flex-1 overflow-auto">
         <div className={wide ? "" : "min-w-max"}>
           {/* Staff header: avatar over name, like Fresha */}
           <div className="sticky top-0 z-20 flex border-b border-line bg-surface">
@@ -214,7 +215,7 @@ export default function StaffDayGrid({
                       : "text-[10px] text-muted/60"
                   }`}
                   style={{
-                    top: ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
+                    top: ((minutes - dayStart) / SLOT_MINUTES) * slotHeight,
                   }}
                 >
                   {formatMinutes(minutes)}
@@ -281,7 +282,7 @@ export default function StaffDayGrid({
                       }`}
                       style={{
                         top:
-                          ((minutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
+                          ((minutes - dayStart) / SLOT_MINUTES) * slotHeight,
                       }}
                     />
                   ))}
@@ -292,7 +293,7 @@ export default function StaffDayGrid({
                       className="pointer-events-none absolute inset-x-0 top-0 bg-foreground/[0.045]"
                       style={{
                         height:
-                          ((workStart - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
+                          ((workStart - dayStart) / SLOT_MINUTES) * slotHeight,
                       }}
                     />
                   )}
@@ -300,21 +301,11 @@ export default function StaffDayGrid({
                     <div
                       className="pointer-events-none absolute inset-x-0 bg-foreground/[0.045]"
                       style={{
-                        top: ((workEnd - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT,
+                        top: ((workEnd - dayStart) / SLOT_MINUTES) * slotHeight,
                         height:
-                          ((dayEnd - workEnd) / SLOT_MINUTES) * SLOT_HEIGHT,
+                          ((dayEnd - workEnd) / SLOT_MINUTES) * slotHeight,
                       }}
                     />
-                  )}
-
-                  {showNowLine && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 z-[8] flex items-center"
-                      style={{ top: nowTop }}
-                    >
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.18)]" />
-                      <span className="h-px flex-1 bg-rose-500" />
-                    </div>
                   )}
 
                   {hint?.staffId === member.id && (
@@ -323,10 +314,10 @@ export default function StaffDayGrid({
                       style={{
                         top:
                           ((hint.minutes - dayStart) / SLOT_MINUTES) *
-                          SLOT_HEIGHT,
+                          slotHeight,
                         height:
                           ((dragging?.duration_minutes ?? 30) / SLOT_MINUTES) *
-                          SLOT_HEIGHT,
+                          slotHeight,
                       }}
                     >
                       <span className="px-2 text-[11px] font-semibold">
@@ -338,11 +329,11 @@ export default function StaffDayGrid({
                   {memberBlocks.map((block) => {
                     const top =
                       ((block.start_minutes - dayStart) / SLOT_MINUTES) *
-                      SLOT_HEIGHT;
+                      slotHeight;
                     const height =
                       ((block.end_minutes - block.start_minutes) /
                         SLOT_MINUTES) *
-                      SLOT_HEIGHT;
+                      slotHeight;
                     return (
                       <button
                         key={`${member.id}-${block.id}`}
@@ -353,7 +344,7 @@ export default function StaffDayGrid({
                             : "Blocked — click to remove"
                         }
                         className="absolute inset-x-1 z-[5] overflow-hidden rounded-lg border border-dashed border-foreground/25 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.05)_0px,rgba(0,0,0,0.05)_6px,transparent_6px,transparent_12px)] px-2 py-1 text-left leading-tight text-foreground/60 transition hover:border-foreground/40"
-                        style={{ top, height: Math.max(height, SLOT_HEIGHT) }}
+                        style={{ top, height: Math.max(height, slotHeight) }}
                       >
                         <p className="truncate text-[11px] font-semibold">
                           {block.reason || "Blocked"}
@@ -367,10 +358,10 @@ export default function StaffDayGrid({
                     if (start === null) return null;
                     const end = start + booking.duration_minutes;
                     const top =
-                      ((start - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT;
+                      ((start - dayStart) / SLOT_MINUTES) * slotHeight;
                     const height =
-                      (booking.duration_minutes / SLOT_MINUTES) * SLOT_HEIGHT;
-                    const roomy = height >= SLOT_HEIGHT * 2.5;
+                      (booking.duration_minutes / SLOT_MINUTES) * slotHeight;
+                    const roomy = height >= slotHeight * 2.5;
 
                     return (
                       <button
@@ -383,7 +374,7 @@ export default function StaffDayGrid({
                         }}
                         onClick={() => onSelect(booking)}
                         title={`${booking.full_name} — ${booking.service_name}`}
-                        className={`absolute inset-x-1 cursor-grab overflow-hidden rounded-lg px-2 py-1.5 text-left leading-tight ring-1 ring-inset transition-all duration-200 hover:z-[15] hover:shadow-md active:cursor-grabbing ${serviceColor(
+                        className={`absolute inset-x-1 cursor-grab overflow-hidden rounded-md px-1.5 py-1 text-left leading-tight ring-1 ring-inset transition-all duration-200 hover:z-[15] hover:shadow-md active:cursor-grabbing ${serviceColor(
                           booking.service_id
                         )} ${
                           booking.status === "cancelled"
@@ -394,7 +385,7 @@ export default function StaffDayGrid({
                             ? "ring-2 ring-amber-400"
                             : ""
                         } ${dragging?.id === booking.id ? "opacity-40" : ""}`}
-                        style={{ top, height: Math.max(height, SLOT_HEIGHT) }}
+                        style={{ top, height: Math.max(height, slotHeight) }}
                       >
                         <p className="flex items-center gap-1 text-[10px] font-medium tabular-nums opacity-70">
                           {formatMinutes(start)} – {formatMinutes(end)}

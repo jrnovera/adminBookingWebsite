@@ -134,14 +134,6 @@ export default function WeekTimeGrid({
     return map;
   }, [blocks]);
 
-  // Current-time indicator, only when the clock falls inside the shown range.
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const showNowLine =
-    days.some((day) => toDateKey(day) === todayKey) &&
-    nowMinutes >= dayStart &&
-    nowMinutes <= dayEnd;
-  const nowTop = ((nowMinutes - dayStart) / SLOT_MINUTES) * SLOT_HEIGHT;
-
   function minutesFromPointer(clientY: number, element: HTMLElement) {
     const rect = element.getBoundingClientRect();
     const raw = dayStart + ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
@@ -284,17 +276,6 @@ export default function WeekTimeGrid({
                       }}
                     />
                   ))}
-
-                  {/* Now line */}
-                  {showNowLine && key === todayKey && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 z-[8] flex items-center"
-                      style={{ top: nowTop }}
-                    >
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.18)]" />
-                      <span className="h-px flex-1 bg-rose-500" />
-                    </div>
-                  )}
 
                   {hint?.dateKey === key && (
                     <div

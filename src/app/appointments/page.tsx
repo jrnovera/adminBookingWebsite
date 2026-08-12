@@ -253,9 +253,11 @@ export default function AppointmentsPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3.5">{booking.staff_name}</td>
-                        <td className="px-5 py-3.5">
-                          <p>{formatDateLong(booking.booking_date)}</p>
-                          <p className="text-xs tabular-nums text-muted">
+                        <td className="whitespace-nowrap px-5 py-3.5">
+                          <p className="text-xs sm:text-sm">
+                            {formatDateLong(booking.booking_date)}
+                          </p>
+                          <p className="text-[11px] tabular-nums text-muted sm:text-xs">
                             {booking.booking_time}
                           </p>
                         </td>
@@ -279,9 +281,20 @@ export default function AppointmentsPage() {
               <ul className="divide-y divide-line sm:hidden">
                 {visible.map((booking) => (
                   <li key={booking.id}>
-                    <button
+                    {/* A <div> here, not a <button> — the status badge
+                        below renders its own interactive <button>, and
+                        buttons can't nest inside buttons in valid HTML. */}
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelected(booking)}
-                      className={`flex w-full flex-col gap-1.5 px-4 py-3.5 text-left active:bg-background ${
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelected(booking);
+                        }
+                      }}
+                      className={`flex w-full cursor-pointer flex-col gap-1.5 px-4 py-3.5 text-left active:bg-background ${
                         selected?.id === booking.id ? "bg-primary-50/60" : ""
                       }`}
                     >
@@ -291,7 +304,11 @@ export default function AppointmentsPage() {
                         </p>
                         <span className="flex shrink-0 items-center gap-1.5">
                           <HomeBadge location={booking.service_location} />
-                          <StatusBadge status={booking.status} />
+                          <ClickableStatusBadge
+                            status={booking.status}
+                            onStatusChange={(newStatus) => changeStatus(booking, newStatus)}
+                            isChanging={saving}
+                          />
                         </span>
                       </div>
                       <p className="truncate text-xs text-muted">
@@ -306,7 +323,7 @@ export default function AppointmentsPage() {
                           {formatMoney(Number(booking.total), booking.currency)}
                         </span>
                       </div>
-                    </button>
+                    </div>
                   </li>
                 ))}
               </ul>

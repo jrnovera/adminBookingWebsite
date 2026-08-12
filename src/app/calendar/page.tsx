@@ -32,6 +32,8 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconCollapse,
+  IconExpand,
   IconPlus,
 } from "@/components/Icons";
 import type { Booking, Staff, StaffBlock, StaffTimeOff } from "@/lib/types";
@@ -55,6 +57,25 @@ export default function CalendarPage() {
   >("all");
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "week">("day");
+  // Takes the grid over the whole browser viewport — the sidebar, topbar,
+  // and page padding all disappear behind it — for when the admin wants
+  // the maximum room to see a busy day at a glance.
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullscreen]);
+
   const [moveError, setMoveError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Booking | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<StaffBlock | null>(null);
@@ -343,7 +364,16 @@ export default function CalendarPage() {
   );
 
   return (
-    <>
+    <div
+      className={
+        fullscreen
+          ? "fixed inset-0 z-50 flex flex-col overflow-hidden bg-background"
+          : // Fills the shell column exactly — the grid below is flex-sized
+            // against this, so nothing overflows and the page never gets a
+            // stray scrollbar to fight with.
+            "flex min-h-0 flex-1 flex-col overflow-hidden"
+      }
+    >
       <PageHeader
         title="Calendar"
         subtitle={rangeLabel}
@@ -428,11 +458,24 @@ export default function CalendarPage() {
               <IconBan size={15} />
               <span className="hidden sm:inline">Block time</span>
             </button>
+
+            <button
+              onClick={() => setFullscreen((value) => !value)}
+              title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+              aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+              className="btn-ghost grid shrink-0 place-items-center px-2.5 py-2 shadow-[var(--shadow-xs)] hover:bg-background"
+            >
+              {fullscreen ? (
+                <IconCollapse size={15} />
+              ) : (
+                <IconExpand size={15} />
+              )}
+            </button>
           </div>
         }
       />
 
-      <main className="flex-1 space-y-4 p-4 sm:p-6">
+      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
         {error && (
           <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
@@ -750,7 +793,7 @@ export default function CalendarPage() {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 

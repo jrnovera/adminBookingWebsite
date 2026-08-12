@@ -46,6 +46,22 @@ export async function deleteBooking(id: string) {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Wipes every booking row — Appointments, Transactions, Reports and Clients
+ * all read from this same table (Clients is derived via `deriveClients`,
+ * not its own table), so this clears all four screens at once. Gated to
+ * superadmin in the UI (see Settings' Danger Zone); this call itself has no
+ * extra guard, so it must only be reachable from a control that has already
+ * checked `isSuperAdmin`. Irreversible — there is no trash/undo.
+ */
+export async function deleteAllBookings() {
+  const { error } = await getSupabaseClient()
+    .from("bookings")
+    .delete()
+    .not("id", "is", null);
+  if (error) throw new Error(error.message);
+}
+
 export type NewBooking = {
   service_id: string;
   service_name: string;

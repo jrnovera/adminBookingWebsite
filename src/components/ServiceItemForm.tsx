@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Modal from "./Modal";
 import { createCatalogService, updateCatalogService } from "@/lib/serviceCatalog";
+import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import type { Service, ServiceCategory } from "@/lib/types";
@@ -31,6 +33,7 @@ export default function ServiceItemForm({
   );
   const [price, setPrice] = useState(String(service?.price ?? "0"));
   const [imageUrl, setImageUrl] = useState(service?.image_url ?? "");
+  const [uploading, setUploading] = useState(false);
   const [isPackage, setIsPackage] = useState(
     service?.is_package ?? defaultIsPackage
   );
@@ -174,12 +177,62 @@ export default function ServiceItemForm({
           />
         </div>
 
-        <Field
-          label="Image URL"
-          value={imageUrl}
-          onChange={setImageUrl}
-          placeholder="https://…"
-        />
+        <div>
+          <span className="mb-1.5 block text-xs uppercase tracking-wide text-muted">
+            Photo
+          </span>
+          <div className="flex items-center gap-4">
+            {imageUrl ? (
+              <Image
+                src={imageUrl}
+                alt=""
+                width={64}
+                height={64}
+                unoptimized
+                className="h-16 w-16 shrink-0 rounded-xl object-cover ring-1 ring-line"
+              />
+            ) : (
+              <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-background text-xs text-muted ring-1 ring-line">
+                No photo
+              </span>
+            )}
+            <div>
+              <label className="btn-ghost inline-block cursor-pointer px-3 py-1.5 text-xs hover:bg-background">
+                {uploading ? "Uploading…" : imageUrl ? "Change photo" : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    setUploading(true);
+                    setError(null);
+                    try {
+                      setImageUrl(await uploadImage("shop-assets", file));
+                    } catch (err) {
+                      setError(
+                        err instanceof Error ? err.message : "Upload failed"
+                      );
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+              </label>
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setImageUrl("")}
+                  className="ml-2 text-xs text-rose-700 hover:underline"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
         <Field
           label="Sort order"
           value={sortOrder}

@@ -1,5 +1,4 @@
 import {
-  IconActivity,
   IconBox,
   IconCalendar,
   IconChart,
@@ -42,7 +41,6 @@ export const navGroups: NavGroup[] = [
       { href: "/", label: "Dashboard", icon: IconDashboard },
       { href: "/calendar", label: "Calendar", icon: IconCalendar },
       { href: "/appointments", label: "Appointments", icon: IconClock },
-      { href: "/activity", label: "Activity", icon: IconActivity },
     ],
   },
   {

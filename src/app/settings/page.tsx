@@ -11,6 +11,7 @@ import {
 } from "@/lib/settings";
 import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
+import { deleteAllBookings } from "@/lib/bookings";
 import {
   getPushStatus,
   subscribeToPush,
@@ -24,7 +25,7 @@ import { useRequireRole } from "@/lib/useRequireRole";
 
 export default function SettingsPage() {
   useRequireRole({ blockStaff: true });
-  const { session } = useAuth();
+  const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
   const { reload } = useShop();
 
@@ -51,9 +52,43 @@ export default function SettingsPage() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
 
+  const [wipeConfirmText, setWipeConfirmText] = useState("");
+  const [wiping, setWiping] = useState(false);
+  const [wipeStatus, setWipeStatus] = useState<Status>(null);
+
   useEffect(() => {
     getPushStatus().then(setPushStatus, () => setPushStatus("unsupported"));
   }, []);
+
+  async function handleDeleteAllBookings() {
+    if (wipeConfirmText !== "DELETE") return;
+    setWiping(true);
+    setWipeStatus(null);
+    try {
+      await deleteAllBookings();
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: null,
+        action: "deleted",
+        summary: "Deleted all bookings, transactions and clients",
+        detail: "Superadmin data wipe from Settings",
+      });
+      setWipeConfirmText("");
+      setWipeStatus({
+        kind: "ok",
+        message:
+          "All bookings, transactions, reports and clients have been permanently deleted.",
+      });
+    } catch (err) {
+      setWipeStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Delete failed",
+      });
+    } finally {
+      setWiping(false);
+    }
+  }
 
   async function handleEnablePush() {
     if (!session?.user.id) return;
@@ -501,6 +536,46 @@ export default function SettingsPage() {
             </button>
           </form>
         </Section>
+
+        {isSuperAdmin && (
+          <Section
+            title="Danger Zone"
+            description="Superadmin only. These actions cannot be undone."
+          >
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+              <p className="text-sm font-medium text-rose-900">
+                Delete all bookings
+              </p>
+              <p className="mt-1 text-sm text-rose-800">
+                Permanently deletes every booking. Appointments, Transactions,
+                Reports and Clients all read from the same records, so this
+                clears all four screens at once — there is no undo and no
+                trash to recover from.
+              </p>
+              <label className="mt-3 block text-xs font-medium uppercase tracking-wide text-rose-800">
+                Type DELETE to confirm
+              </label>
+              <input
+                value={wipeConfirmText}
+                onChange={(event) => setWipeConfirmText(event.target.value)}
+                placeholder="DELETE"
+                className="mt-1 w-full rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm outline-none focus:border-rose-500 sm:w-64"
+              />
+              <div className="mt-3">
+                <button
+                  onClick={handleDeleteAllBookings}
+                  disabled={wipeConfirmText !== "DELETE" || wiping}
+                  className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-xs)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {wiping ? "Deleting…" : "Delete all bookings"}
+                </button>
+              </div>
+              <div className="mt-2">
+                <Status status={wipeStatus} />
+              </div>
+            </div>
+          </Section>
+        )}
       </main>
     </>
   );

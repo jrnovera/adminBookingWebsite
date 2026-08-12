@@ -3,18 +3,31 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import Avatar from "./Avatar";
-import { createStaff, updateStaff, weekdayLabels } from "@/lib/staff";
+import {
+  createStaff,
+  setStaffCategories,
+  updateStaff,
+  weekdayLabels,
+} from "@/lib/staff";
 import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
-import type { Staff } from "@/lib/types";
+import type { ServiceCategory, Staff } from "@/lib/types";
 
 export default function StaffForm({
   staff,
+  categories,
+  staffCategoryIds,
   onClose,
   onSaved,
 }: {
   staff: Staff | null;
+  /** Active categories, so the admin can tick which ones this person works
+   * in — e.g. Hair, Nails, Massage. */
+  categories: ServiceCategory[];
+  /** This person's current expertise — empty/omitted means "no restriction
+   * on file", not "offers nothing"; see supabase/021_staff_categories.sql. */
+  staffCategoryIds: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -30,6 +43,8 @@ export default function StaffForm({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [offeredCategoryIds, setOfferedCategoryIds] =
+    useState<string[]>(staffCategoryIds);
   const { session } = useAuth();
   const actor = session?.user.email ?? null;
 
@@ -38,6 +53,14 @@ export default function StaffForm({
       current.includes(day)
         ? current.filter((value) => value !== day)
         : [...current, day].sort()
+    );
+  }
+
+  function toggleCategory(categoryId: string) {
+    setOfferedCategoryIds((current) =>
+      current.includes(categoryId)
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId]
     );
   }
 
@@ -59,8 +82,9 @@ export default function StaffForm({
     };
 
     try {
+      const staffId = staff ? staff.id : await createStaff(payload);
       if (staff) await updateStaff(staff.id, payload);
-      else await createStaff(payload);
+      await setStaffCategories(staffId, offeredCategoryIds);
       logActivity({
         actor,
         entity: "staff",
@@ -143,6 +167,42 @@ export default function StaffForm({
             type="time"
             required
           />
+        </div>
+
+        <div>
+          <span className="mb-1 block text-xs uppercase tracking-wide text-muted">
+            Expertise
+          </span>
+          <p className="mb-1.5 text-xs text-muted">
+            {offeredCategoryIds.length === 0
+              ? "Nothing ticked yet — the booking site will offer this person for any service until you scope them below."
+              : `Bookable for ${offeredCategoryIds.length} categor${
+                  offeredCategoryIds.length === 1 ? "y" : "ies"
+                } — only services in these will offer them as a staff choice on the booking site.`}
+          </p>
+          {categories.length === 0 ? (
+            <p className="rounded-xl border border-line px-3 py-2.5 text-xs text-muted">
+              No categories in the catalogue yet — add some under Services
+              &amp; Packages first.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => toggleCategory(category.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs transition ${
+                    offeredCategoryIds.includes(category.id)
+                      ? "bg-foreground text-white"
+                      : "border border-line hover:bg-background"
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
