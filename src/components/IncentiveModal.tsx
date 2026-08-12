@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import { addIncentive, deleteIncentive, incentiveKindLabels } from "@/lib/payroll";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, type PayPeriod } from "@/lib/format";
 import type { IncentiveKind, Staff, StaffIncentive } from "@/lib/types";
 
 const kinds: IncentiveKind[] = ["bonus", "commission", "deduction"];
@@ -16,16 +16,19 @@ const kindStyles: Record<IncentiveKind, string> = {
 
 export default function IncentiveModal({
   staff,
-  monthKey,
+  period,
   currency,
   existing,
   onClose,
   onChanged,
 }: {
   staff: Staff;
-  monthKey: string;
+  /** The specific cutoff this line item counts toward — a whole month, a
+   * semi-monthly half, or a week, depending on the staff member's
+   * pay_frequency (see lib/format.ts). */
+  period: PayPeriod;
   currency: string;
-  /** Existing line items for this staff member + month, so the admin can
+  /** Existing line items for this staff member + period, so the admin can
    * see and remove them without hunting through a separate list. */
   existing: StaffIncentive[];
   onClose: () => void;
@@ -48,7 +51,7 @@ export default function IncentiveModal({
     try {
       await addIncentive({
         staff_id: staff.id,
-        period_month: `${monthKey}-01`,
+        period_month: period.key,
         label: label.trim(),
         amount: Number(amount),
         kind,
@@ -79,7 +82,11 @@ export default function IncentiveModal({
   }
 
   return (
-    <Modal title={`${staff.name} — bonuses & deductions`} onClose={onClose}>
+    <Modal
+      title={`${staff.name} — bonuses & deductions`}
+      onClose={onClose}
+    >
+      <p className="-mt-2 mb-3 text-xs text-muted">{period.label}</p>
       <div className="space-y-4 text-sm">
         {existing.length > 0 && (
           <ul className="divide-y divide-line rounded-xl border border-line">

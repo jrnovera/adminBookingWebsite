@@ -20,6 +20,8 @@ import { fetchServiceCategories } from "@/lib/serviceCatalog";
 import { fetchBookings, reassignStaffBookings } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
+import { useShop } from "@/lib/shop";
+import { formatMoney, payFrequencyLabels } from "@/lib/format";
 import type { ServiceCategory, Staff, StaffTimeOff } from "@/lib/types";
 import { useRequireRole } from "@/lib/useRequireRole";
 
@@ -27,6 +29,8 @@ export default function StaffPage() {
   useRequireRole({ blockStaff: true });
   const toast = useToast();
   const { session, isSuperAdmin } = useAuth();
+  const { settings } = useShop();
+  const currency = settings?.currency ?? "AED";
   const actor = session?.user.email ?? null;
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
@@ -201,6 +205,15 @@ export default function StaffPage() {
                   </div>
 
                   <dl className="mt-4 space-y-1.5 text-sm">
+                    <Row label="Pay">
+                      {member.salary_type === "monthly"
+                        ? `${formatMoney(member.base_salary, currency)}/mo`
+                        : `${formatMoney(member.hourly_rate, currency)}/hr`}
+                      <span className="text-muted">
+                        {" "}
+                        · {payFrequencyLabels[member.pay_frequency]}
+                      </span>
+                    </Row>
                     <Row label="Hours">
                       {member.work_start} – {member.work_end}
                     </Row>

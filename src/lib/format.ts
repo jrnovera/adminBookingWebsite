@@ -78,3 +78,102 @@ export function formatDateLong(dateKey: string) {
     year: "numeric",
   });
 }
+
+export function formatDateShort(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+// ---------------------------------------------------------------
+// Pay periods — a "cutoff" is a start/end date range Payroll pays out as
+// one unit. Which shape applies is per staff member (see Staff.pay_frequency
+// in lib/types.ts): one period covering the whole month, two semi-monthly
+// halves, or one per calendar week. Everything here is scoped to a single
+// displayed month so the Payroll page can list "the periods that fall in
+// the month currently being browsed" regardless of frequency.
+// ---------------------------------------------------------------
+
+export type PayPeriod = {
+  start: string;
+  end: string;
+  /** Stable per-period identity — used as the staff_incentives /
+   * payroll_runs `period_month` value, so it must be unique across the
+   * whole timeline, not just within one displayed month. */
+  key: string;
+  label: string;
+};
+
+export function monthlyPeriod(monthKey: string): PayPeriod {
+  const end = `${monthKey}-${String(daysInMonth(monthKey)).padStart(2, "0")}`;
+  return { start: `${monthKey}-01`, end, key: `${monthKey}-01`, label: monthLabel(monthKey) };
+}
+
+export function semiMonthlyPeriods(monthKey: string): PayPeriod[] {
+  const lastDay = daysInMonth(monthKey);
+  const label = monthLabel(monthKey);
+  return [
+    {
+      start: `${monthKey}-01`,
+      end: `${monthKey}-15`,
+      key: `${monthKey}-01`,
+      label: `1–15 ${label}`,
+    },
+    {
+      start: `${monthKey}-16`,
+      end: `${monthKey}-${String(lastDay).padStart(2, "0")}`,
+      key: `${monthKey}-16`,
+      label: `16–${lastDay} ${label}`,
+    },
+  ];
+}
+
+/** Monday-start weeks whose Monday falls within this month — a week
+ * spanning a month boundary is attributed to whichever month its Monday is
+ * in, so every calendar day belongs to exactly one period. */
+export function weeklyPeriodsInMonth(monthKey: string): PayPeriod[] {
+  const [year, month] = monthKey.split("-").map(Number);
+  const count = daysInMonth(monthKey);
+  const periods: PayPeriod[] = [];
+  for (let day = 1; day <= count; day++) {
+    const date = new Date(year, month - 1, day);
+    if (date.getDay() !== 1) continue; // Monday only
+    const start = toDateKey(date);
+    const end = toDateKey(addDays(date, 6));
+    periods.push({
+      start,
+      end,
+      key: start,
+      label: `${formatDateShort(start)} – ${formatDateShort(end)}`,
+    });
+  }
+  return periods;
+}
+
+export function periodsForFrequency(
+  frequency: "weekly" | "semi_monthly" | "monthly",
+  monthKey: string
+): PayPeriod[] {
+  if (frequency === "weekly") return weeklyPeriodsInMonth(monthKey);
+  if (frequency === "semi_monthly") return semiMonthlyPeriods(monthKey);
+  return [monthlyPeriod(monthKey)];
+}
+
+export const payFrequencyLabels: Record<
+  "weekly" | "semi_monthly" | "monthly",
+  string
+> = {
+  weekly: "Paid weekly",
+  semi_monthly: "Paid every 15 days",
+  monthly: "Paid monthly",
+};
+
+/** Which period (by index into `periods`) a date falls in, or -1 if it's
+ * before the first period's start — only possible for weekly periods on the
+ * handful of days before the month's first Monday, which belong to the
+ * previous month's cutoff rather than one shown in this view. */
+export function periodIndexForDate(periods: PayPeriod[], dateKey: string): number {
+  return periods.findIndex((p) => dateKey >= p.start && dateKey <= p.end);
+}

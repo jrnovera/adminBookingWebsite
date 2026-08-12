@@ -8,16 +8,25 @@ import AttendanceMarkModal from "@/components/AttendanceMarkModal";
 import { EmptyState, ErrorBanner } from "@/components/Feedback";
 import { IconChevronLeft, IconChevronRight, IconClipboardCheck } from "@/components/Icons";
 import {
+  addDays,
   addMonths,
   daysInMonth,
   monthLabel,
+  payFrequencyLabels,
+  periodIndexForDate,
+  periodsForFrequency,
   toDateKey,
   toMonthKey,
 } from "@/lib/format";
 import { attendanceStatusLabels, fetchAttendanceForMonth } from "@/lib/attendance";
 import { fetchStaff } from "@/lib/staff";
+import {
+  computeDuePayrolls,
+  fetchPayrollRunsForMonth,
+  fetchPayrollRunsForRange,
+} from "@/lib/payroll";
 import { useRequireRole } from "@/lib/useRequireRole";
-import type { AttendanceStatus, Staff, StaffAttendance } from "@/lib/types";
+import type { AttendanceStatus, PayrollRun, Staff, StaffAttendance } from "@/lib/types";
 
 const statusInitials: Record<AttendanceStatus, string> = {
   present: "P",
@@ -42,6 +51,7 @@ export default function AttendancePage() {
   const [monthKey, setMonthKey] = useState(() => toMonthKey(new Date()));
   const [staff, setStaff] = useState<Staff[]>([]);
   const [attendance, setAttendance] = useState<StaffAttendance[]>([]);
+  const [monthPayrollRuns, setMonthPayrollRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ staff: Staff; dateKey: string } | null>(
@@ -50,10 +60,15 @@ export default function AttendancePage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([fetchStaff(), fetchAttendanceForMonth(monthKey)]).then(
-      ([staffRows, attendanceRows]) => {
+    Promise.all([
+      fetchStaff(),
+      fetchAttendanceForMonth(monthKey),
+      fetchPayrollRunsForMonth(monthKey),
+    ]).then(
+      ([staffRows, attendanceRows, runRows]) => {
         setStaff(staffRows.filter((s) => s.active));
         setAttendance(attendanceRows);
+        setMonthPayrollRuns(runRows);
         setError(null);
         setLoading(false);
       },
@@ -65,6 +80,21 @@ export default function AttendancePage() {
   }, [monthKey]);
 
   useEffect(load, [load]);
+
+  // Independent of which month is being browsed — the "N staff due" badge
+  // always reflects today, not whatever month the grid happens to show.
+  const [dueRuns, setDueRuns] = useState<PayrollRun[]>([]);
+  useEffect(() => {
+    const today = toDateKey(new Date());
+    const rangeStart = toDateKey(addDays(new Date(), -40));
+    fetchPayrollRunsForRange(rangeStart, today).then(setDueRuns, () => {});
+  }, []);
+
+  const duePayrolls = useMemo(
+    () => computeDuePayrolls(staff, dueRuns, toDateKey(new Date())),
+    [staff, dueRuns]
+  );
+  const dueStaffCount = new Set(duePayrolls.map((d) => d.staff.id)).size;
 
   const byStaffDate = useMemo(() => {
     const map = new Map<string, StaffAttendance>();
@@ -130,9 +160,17 @@ export default function AttendancePage() {
             </button>
             <Link
               href="/payroll"
-              className="btn-primary flex items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover"
+              className="btn-primary relative flex items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover"
             >
               Go to Payroll
+              {dueStaffCount > 0 && (
+                <span
+                  className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white"
+                  title={`${dueStaffCount} staff member${dueStaffCount === 1 ? "" : "s"} have unpaid salary due`}
+                >
+                  {dueStaffCount > 9 ? "9+" : dueStaffCount}
+                </span>
+              )}
             </Link>
           </div>
         }
@@ -155,7 +193,26 @@ export default function AttendancePage() {
               </span>
             )
           )}
-          <span className="text-muted/70">· Click any day to mark it</span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-5 w-5 rounded-full bg-primary-50 ring-1 ring-inset ring-primary-200" />
+            Today
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-5 w-0.5 rounded-full bg-amber-500" />
+            Payday coming up
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-5 w-0.5 rounded-full bg-rose-500" />
+            Payday passed — not yet paid
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-5 w-0.5 rounded-full bg-emerald-500" />
+            Payday — paid
+          </span>
+          <span className="text-muted/70">
+            · Per staff member&rsquo;s own &ldquo;Paid every&rdquo; setting
+            (see Team) · Click any day to mark it
+          </span>
         </div>
 
         {loading ? (
@@ -199,6 +256,13 @@ export default function AttendancePage() {
               <tbody>
                 {staff.map((member) => {
                   const counts = summaryByStaff.get(member.id);
+                  // This staff member's own pay cutoffs for the displayed
+                  // month — weekly/15-day staff split the row into visible
+                  // chunks, monthly staff get a single uninterrupted row.
+                  const periods = periodsForFrequency(
+                    member.pay_frequency,
+                    monthKey
+                  );
                   return (
                     <tr key={member.id} className="border-b border-line">
                       <td className="sticky left-0 z-10 border-r border-line bg-surface px-4 py-2">
@@ -221,12 +285,51 @@ export default function AttendancePage() {
                         const isDayOff = member.days_off.includes(
                           new Date(dateKey).getDay()
                         );
+                        const periodIdx = periodIndexForDate(periods, dateKey);
+                        // Odd-numbered periods get a faint tint so each
+                        // cutoff reads as its own block within the row —
+                        // monthly staff never have more than one period, so
+                        // this never triggers for them.
+                        const periodTint =
+                          periodIdx > 0 && periodIdx % 2 === 1
+                            ? "bg-foreground/[0.025]"
+                            : "";
+                        const isPayday =
+                          periodIdx >= 0 && dateKey === periods[periodIdx].end;
+                        const paydayPeriod = isPayday ? periods[periodIdx] : null;
+                        const isPaidPeriod =
+                          paydayPeriod !== null &&
+                          monthPayrollRuns.some(
+                            (r) =>
+                              r.staff_id === member.id &&
+                              r.period_month === paydayPeriod.key
+                          );
+                        // Passed and unpaid = needs attention now (rose);
+                        // passed and paid = settled (emerald); still ahead
+                        // = just a heads-up of what's coming (amber).
+                        const paydayColor = !isPayday
+                          ? ""
+                          : isPaidPeriod
+                          ? "border-emerald-400"
+                          : dateKey <= today
+                          ? "border-rose-400"
+                          : "border-amber-400";
+                        const paydayTitle = !isPayday
+                          ? undefined
+                          : `Payday — ${payFrequencyLabels[member.pay_frequency]}${
+                              isPaidPeriod
+                                ? " · Paid"
+                                : dateKey <= today
+                                ? " · Not yet paid"
+                                : " · Upcoming"
+                            }`;
                         return (
                           <td
                             key={day}
-                            className={`border-r border-line p-1 text-center ${
-                              dateKey === today ? "bg-primary-50/40" : ""
-                            }`}
+                            title={paydayTitle}
+                            className={`border-r p-1 text-center ${periodTint} ${
+                              isPayday ? `border-r-2 ${paydayColor}` : "border-line"
+                            } ${dateKey === today ? "bg-primary-50/40" : ""}`}
                           >
                             <button
                               onClick={() =>

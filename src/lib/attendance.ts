@@ -31,6 +31,16 @@ export async function fetchAttendanceForMonth(
   monthKey: string
 ): Promise<StaffAttendance[]> {
   const { start, end } = monthRange(monthKey);
+  return fetchAttendanceForRange(start, end);
+}
+
+/** Weekly pay periods can spill a few days past the displayed month's
+ * boundary (see lib/format.ts weeklyPeriodsInMonth), so Payroll pads its
+ * fetch range rather than reusing fetchAttendanceForMonth's exact bounds. */
+export async function fetchAttendanceForRange(
+  start: string,
+  end: string
+): Promise<StaffAttendance[]> {
   const { data, error } = await getSupabaseClient()
     .from("staff_attendance")
     .select("*")

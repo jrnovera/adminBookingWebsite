@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import Avatar from "@/components/Avatar";
 import IncentiveModal from "@/components/IncentiveModal";
@@ -13,9 +14,18 @@ import {
   IconChevronRight,
   IconWallet,
 } from "@/components/Icons";
-import { addMonths, formatMoney, monthLabel, toMonthKey } from "@/lib/format";
+import {
+  addDays,
+  addMonths,
+  formatMoney,
+  monthLabel,
+  periodsForFrequency,
+  toDateKey,
+  toMonthKey,
+  type PayPeriod,
+} from "@/lib/format";
 import { exportPayrollCsv } from "@/lib/exportCsv";
-import { fetchAttendanceForMonth } from "@/lib/attendance";
+import { fetchAttendanceForRange } from "@/lib/attendance";
 import { fetchStaff } from "@/lib/staff";
 import { useShop } from "@/lib/shop";
 import { useAuth } from "@/lib/auth";
@@ -38,8 +48,20 @@ export default function PayrollPage() {
   const { session } = useAuth();
   const actor = session?.user.email ?? null;
   const currency = settings?.currency ?? "AED";
+  // Lets a link (e.g. a "pay is due" notification for a past month) open
+  // straight to the relevant month instead of always landing on today's.
+  const searchParams = useSearchParams();
+  const monthParam = searchParams.get("month");
 
-  const [monthKey, setMonthKey] = useState(() => toMonthKey(new Date()));
+  const [monthKey, setMonthKey] = useState(
+    () => monthParam ?? toMonthKey(new Date())
+  );
+  // Covers navigating here from another already-open /payroll tab (e.g. the
+  // bell notification), where Next.js reuses the mounted page instead of
+  // re-running the useState initializer above.
+  useEffect(() => {
+    if (monthParam) setMonthKey(monthParam);
+  }, [monthParam]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [attendance, setAttendance] = useState<StaffAttendance[]>([]);
   const [incentives, setIncentives] = useState<StaffIncentive[]>([]);
@@ -47,16 +69,28 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [incentiveTarget, setIncentiveTarget] = useState<Staff | null>(null);
+  const [incentiveTarget, setIncentiveTarget] = useState<{
+    staff: Staff;
+    period: PayPeriod;
+  } | null>(null);
   const [confirmPay, setConfirmPay] = useState<StaffPayrollSummary | null>(null);
-  const [confirmUnpay, setConfirmUnpay] = useState<Staff | null>(null);
+  const [confirmUnpay, setConfirmUnpay] = useState<StaffPayrollSummary | null>(
+    null
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
+    // Weekly cutoffs can spill a few days past the displayed month (see
+    // weeklyPeriodsInMonth), so attendance is fetched with a week of
+    // padding on each side rather than the exact month bounds.
+    const monthStart = `${monthKey}-01`;
+    const paddedStart = toDateKey(addDays(new Date(`${monthStart}T00:00:00`), -7));
+    const paddedEnd = toDateKey(addDays(new Date(`${monthStart}T00:00:00`), 38));
+
     Promise.all([
       fetchStaff(),
-      fetchAttendanceForMonth(monthKey),
+      fetchAttendanceForRange(paddedStart, paddedEnd),
       fetchIncentivesForMonth(monthKey),
       fetchPayrollRunsForMonth(monthKey),
     ]).then(
@@ -77,34 +111,46 @@ export default function PayrollPage() {
 
   useEffect(load, [load]);
 
+  // One entry per staff member per cutoff period that falls in the
+  // displayed month — a monthly-pay staffer gets one row, a weekly one gets
+  // up to five, matching their own pay_frequency (see Team > Pay setup).
   const summaries = useMemo<StaffPayrollSummary[]>(() => {
-    return staff.map((member) => {
+    const entries: StaffPayrollSummary[] = [];
+    for (const member of staff) {
+      const periods = periodsForFrequency(member.pay_frequency, monthKey);
       const memberAttendance = attendance.filter(
         (row) => row.staff_id === member.id
       );
-      const memberIncentives = incentives.filter(
-        (row) => row.staff_id === member.id
-      );
-      const summary = computeStaffPayroll(
-        member,
-        monthKey,
-        memberAttendance,
-        memberIncentives
-      );
-      const run = runs.find((r) => r.staff_id === member.id);
-      if (run) {
-        return {
-          ...summary,
-          netPay: run.net_pay,
-          basePay: run.gross_pay,
-          bonusTotal: run.incentives_total,
-          deductionTotal: run.deductions_total,
-          paid: true,
-          paidAt: run.paid_at,
-        };
+      for (const period of periods) {
+        const periodIncentives = incentives.filter(
+          (row) => row.staff_id === member.id && row.period_month === period.key
+        );
+        const summary = computeStaffPayroll(
+          member,
+          monthKey,
+          period,
+          memberAttendance,
+          periodIncentives
+        );
+        const run = runs.find(
+          (r) => r.staff_id === member.id && r.period_month === period.key
+        );
+        entries.push(
+          run
+            ? {
+                ...summary,
+                netPay: run.net_pay,
+                basePay: run.gross_pay,
+                bonusTotal: run.incentives_total,
+                deductionTotal: run.deductions_total,
+                paid: true,
+                paidAt: run.paid_at,
+              }
+            : summary
+        );
       }
-      return summary;
-    });
+    }
+    return entries;
   }, [staff, attendance, incentives, runs, monthKey]);
 
   const totals = useMemo(
@@ -113,17 +159,17 @@ export default function PayrollPage() {
       bonus: summaries.reduce((sum, s) => sum + s.bonusTotal + s.commissionTotal, 0),
       deductions: summaries.reduce((sum, s) => sum + s.deductionTotal, 0),
       net: summaries.reduce((sum, s) => sum + s.netPay, 0),
-      paidCount: summaries.filter((s) => s.paid).length,
+      lateDeductions: summaries.reduce((sum, s) => sum + s.lateDeductionTotal, 0),
     }),
     [summaries]
   );
 
   async function handleMarkPaid(summary: StaffPayrollSummary) {
-    setBusyId(summary.staff.id);
+    setBusyId(`${summary.staff.id}:${summary.period.key}`);
     try {
       await markPayrollPaid({
         staff_id: summary.staff.id,
-        period_month: `${monthKey}-01`,
+        period_month: summary.period.key,
         gross_pay: summary.basePay,
         incentives_total: summary.bonusTotal + summary.commissionTotal,
         deductions_total: summary.deductionTotal,
@@ -139,7 +185,7 @@ export default function PayrollPage() {
         entity: "payroll",
         entity_id: summary.staff.id,
         action: "paid",
-        summary: `Paid ${summary.staff.name} for ${monthLabel(monthKey)}`,
+        summary: `Paid ${summary.staff.name} for ${summary.period.label}`,
         detail: `Net ${formatMoney(summary.netPay, currency)}`,
       });
       setConfirmPay(null);
@@ -154,17 +200,20 @@ export default function PayrollPage() {
     }
   }
 
-  async function handleUnmarkPaid(member: Staff) {
-    setBusyId(member.id);
+  async function handleUnmarkPaid(summary: StaffPayrollSummary) {
+    setBusyId(`${summary.staff.id}:${summary.period.key}`);
     try {
-      await unmarkPayrollPaid(member.id, monthKey);
-      toast.success("Unmarked", `${member.name} is no longer marked as paid.`);
+      await unmarkPayrollPaid(summary.staff.id, summary.period.key);
+      toast.success(
+        "Unmarked",
+        `${summary.staff.name} is no longer marked as paid.`
+      );
       logActivity({
         actor,
         entity: "payroll",
-        entity_id: member.id,
+        entity_id: summary.staff.id,
         action: "unpaid",
-        summary: `Reopened payroll for ${member.name} · ${monthLabel(monthKey)}`,
+        summary: `Reopened payroll for ${summary.staff.name} · ${summary.period.label}`,
       });
       setConfirmUnpay(null);
       load();
@@ -182,7 +231,7 @@ export default function PayrollPage() {
     <>
       <PageHeader
         title="Payroll"
-        subtitle="Computed from Attendance, plus any bonuses or deductions."
+        subtitle="Computed from Attendance, plus any bonuses, deductions or lateness."
         action={
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
@@ -225,7 +274,7 @@ export default function PayrollPage() {
         {error && <ErrorBanner message={error} />}
 
         {/* Summary strip */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <SummaryCard label="Base pay" value={formatMoney(totals.base, currency)} />
           <SummaryCard
             label="Bonuses & commission"
@@ -235,6 +284,11 @@ export default function PayrollPage() {
           <SummaryCard
             label="Deductions"
             value={formatMoney(totals.deductions, currency)}
+            tone="rose"
+          />
+          <SummaryCard
+            label="Lost to lateness"
+            value={formatMoney(totals.lateDeductions, currency)}
             tone="rose"
           />
           <SummaryCard
@@ -254,10 +308,11 @@ export default function PayrollPage() {
           />
         ) : (
           <div className="card overflow-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
               <thead className="border-b border-line text-xs uppercase text-muted">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Staff</th>
+                  <th className="px-4 py-2.5 font-medium">Cutoff</th>
                   <th className="px-4 py-2.5 font-medium">Attendance</th>
                   <th className="px-4 py-2.5 font-medium">Base pay</th>
                   <th className="px-4 py-2.5 font-medium">Bonus / Commission</th>
@@ -269,11 +324,9 @@ export default function PayrollPage() {
               <tbody className="divide-y divide-line">
                 {summaries.map((summary) => {
                   const member = summary.staff;
-                  const memberIncentives = incentives.filter(
-                    (row) => row.staff_id === member.id
-                  );
+                  const rowKey = `${member.id}:${summary.period.key}`;
                   return (
-                    <tr key={member.id}>
+                    <tr key={rowKey}>
                       <td className="px-4 py-3">
                         <span className="flex items-center gap-2">
                           <Avatar name={member.name} src={member.avatar_url} size={30} />
@@ -289,35 +342,49 @@ export default function PayrollPage() {
                           </span>
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-xs text-muted">
+                        {summary.period.label}
+                      </td>
                       <td className="px-4 py-3 text-xs">
                         {member.salary_type === "hourly" ? (
                           <span className="tabular-nums text-muted">
                             {summary.hoursWorked.toFixed(1)} hrs
                           </span>
                         ) : (
-                          <span className="flex flex-wrap gap-1.5 text-muted">
-                            <span className="text-emerald-700">
-                              {summary.statusCounts.present}P
+                          <>
+                            <span className="flex flex-wrap gap-1.5 text-muted">
+                              <span className="text-emerald-700">
+                                {summary.statusCounts.present}P
+                              </span>
+                              <span className="text-amber-700">
+                                {summary.statusCounts.late}L
+                              </span>
+                              <span className="text-primary-dark">
+                                {summary.statusCounts.half_day}½
+                              </span>
+                              <span>{summary.statusCounts.on_leave}O</span>
+                              <span className="text-rose-700">
+                                {summary.statusCounts.absent}A
+                              </span>
+                              {summary.unmarkedDays > 0 && (
+                                <span
+                                  className="text-rose-700/70"
+                                  title="Unmarked days count as absent"
+                                >
+                                  {summary.unmarkedDays}?
+                                </span>
+                              )}
                             </span>
-                            <span className="text-amber-700">
-                              {summary.statusCounts.late}L
-                            </span>
-                            <span className="text-primary-dark">
-                              {summary.statusCounts.half_day}½
-                            </span>
-                            <span>{summary.statusCounts.on_leave}O</span>
-                            <span className="text-rose-700">
-                              {summary.statusCounts.absent}A
-                            </span>
-                            {summary.unmarkedDays > 0 && (
+                            {summary.lateDeductionTotal > 0 && (
                               <span
-                                className="text-rose-700/70"
-                                title="Unmarked days count as absent"
+                                className="mt-1 block text-rose-700/80"
+                                title={`${summary.lateMinutesTotal} min late total`}
                               >
-                                {summary.unmarkedDays}?
+                                −{formatMoney(summary.lateDeductionTotal, currency)}{" "}
+                                for lateness
                               </span>
                             )}
-                          </span>
+                          </>
                         )}
                       </td>
                       <td className="px-4 py-3 tabular-nums">
@@ -325,7 +392,9 @@ export default function PayrollPage() {
                       </td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => setIncentiveTarget(member)}
+                          onClick={() =>
+                            setIncentiveTarget({ staff: member, period: summary.period })
+                          }
                           className="flex items-center gap-1 tabular-nums text-emerald-700 hover:underline"
                         >
                           {summary.bonusTotal + summary.commissionTotal > 0
@@ -338,7 +407,9 @@ export default function PayrollPage() {
                       </td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => setIncentiveTarget(member)}
+                          onClick={() =>
+                            setIncentiveTarget({ staff: member, period: summary.period })
+                          }
                           className={`tabular-nums hover:underline ${
                             summary.deductionTotal > 0
                               ? "text-rose-700"
@@ -356,8 +427,8 @@ export default function PayrollPage() {
                       <td className="px-4 py-3">
                         {summary.paid ? (
                           <button
-                            onClick={() => setConfirmUnpay(member)}
-                            disabled={busyId === member.id}
+                            onClick={() => setConfirmUnpay(summary)}
+                            disabled={busyId === rowKey}
                             className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-medium text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-60"
                             title="Click to reopen"
                           >
@@ -366,7 +437,7 @@ export default function PayrollPage() {
                         ) : (
                           <button
                             onClick={() => setConfirmPay(summary)}
-                            disabled={busyId === member.id}
+                            disabled={busyId === rowKey}
                             className="btn-primary px-3 py-1.5 text-xs hover:opacity-90 disabled:opacity-60"
                           >
                             Mark paid
@@ -386,19 +457,26 @@ export default function PayrollPage() {
           <Link href="/attendance" className="underline">
             Attendance
           </Link>
-          . Monthly staff earn their basic pay split across expected working
-          days (their schedule minus days off); half days pay half, absences
-          and unmarked days pay nothing. Hourly staff are paid for clocked
-          hours only.
+          . Each staff member&rsquo;s monthly basic pay is split across their
+          expected working days for the whole month, then paid out per
+          cutoff (weekly, 15-day, or monthly — set per person on the Team
+          page): present/half-day pay in full/half, absences and unmarked
+          days pay nothing, and a late day pays only the part of the shift
+          actually worked, based on how late the recorded time-in was.
+          Hourly staff are paid for clocked hours only.
         </p>
       </main>
 
       {incentiveTarget && (
         <IncentiveModal
-          staff={incentiveTarget}
-          monthKey={monthKey}
+          staff={incentiveTarget.staff}
+          period={incentiveTarget.period}
           currency={currency}
-          existing={incentives.filter((row) => row.staff_id === incentiveTarget.id)}
+          existing={incentives.filter(
+            (row) =>
+              row.staff_id === incentiveTarget.staff.id &&
+              row.period_month === incentiveTarget.period.key
+          )}
           onClose={() => setIncentiveTarget(null)}
           onChanged={load}
         />
@@ -406,7 +484,7 @@ export default function PayrollPage() {
 
       {confirmPay && (
         <ConfirmDialog
-          title="Mark this month as paid?"
+          title="Mark this period as paid?"
           tone="default"
           confirmLabel="Mark paid"
           message={
@@ -414,13 +492,13 @@ export default function PayrollPage() {
               <span className="font-medium text-foreground">
                 {confirmPay.staff.name}
               </span>{" "}
-              will be marked paid for {monthLabel(monthKey)} at{" "}
+              will be marked paid for {confirmPay.period.label} at{" "}
               <span className="font-medium text-foreground">
                 {formatMoney(confirmPay.netPay, currency)}
               </span>
               . This locks in today&rsquo;s computed amount — further
-              attendance edits this month won&rsquo;t change it unless you
-              reopen it.
+              attendance edits to this cutoff won&rsquo;t change it unless
+              you reopen it.
             </>
           }
           onClose={() => setConfirmPay(null)}
@@ -436,9 +514,9 @@ export default function PayrollPage() {
           message={
             <>
               <span className="font-medium text-foreground">
-                {confirmUnpay.name}
+                {confirmUnpay.staff.name}
               </span>
-              &rsquo;s {monthLabel(monthKey)} payslip will go back to
+              &rsquo;s {confirmUnpay.period.label} payslip will go back to
               computed-live instead of paid.
             </>
           }

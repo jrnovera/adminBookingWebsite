@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchProducts, stockLevel } from "@/lib/inventory";
-import { formatDateLong, toDateKey } from "@/lib/format";
+import { addDays, formatDateLong, toDateKey } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
 import { useShop } from "@/lib/shop";
+import { useAuth } from "@/lib/auth";
 import { playNotificationSound } from "@/lib/notificationSound";
-import type { Product } from "@/lib/types";
+import { fetchStaff } from "@/lib/staff";
+import { computeDuePayrolls, fetchPayrollRunsForRange } from "@/lib/payroll";
+import type { PayrollRun, Product, Staff } from "@/lib/types";
 
 type Note = {
   id: string;
@@ -31,8 +34,15 @@ export default function Notifications() {
   // Shared hook so the bell picks up realtime inserts like every other page.
   const { bookings, loading: bookingsLoading } = useBookings();
   const { settings } = useShop();
+  const { isAdminOrAbove } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
+  // Payroll is admin/superadmin-only info (see Payroll page's own
+  // blockStaff gate) — a front-desk "staff" account should never see who
+  // is or isn't paid, so these stay empty for them.
+  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>([]);
+  const [payrollLoaded, setPayrollLoaded] = useState(false);
   // `null` until the first fully-loaded snapshot of notes is captured — a
   // baseline to diff future snapshots against, not something to ring for.
   // Without this, bookings and products resolve at different times after a
@@ -49,6 +59,23 @@ export default function Notifications() {
   useEffect(() => {
     fetchProducts().then(setProducts, () => {}).finally(() => setProductsLoaded(true));
   }, []);
+
+  useEffect(() => {
+    if (!isAdminOrAbove) {
+      setPayrollLoaded(true); // nothing to wait on — settle immediately
+      return;
+    }
+    const today = toDateKey(new Date());
+    // Comfortably covers computeDuePayrolls' own ~35-day lookback window.
+    const rangeStart = toDateKey(addDays(new Date(), -40));
+    Promise.all([fetchStaff(), fetchPayrollRunsForRange(rangeStart, today)]).then(
+      ([staffRows, runRows]) => {
+        setStaffList(staffRows);
+        setPayrollRuns(runRows);
+      },
+      () => {}
+    ).finally(() => setPayrollLoaded(true));
+  }, [isAdminOrAbove]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -129,8 +156,36 @@ export default function Notifications() {
       });
     }
 
+    // One note per staff member with unpaid, already-passed pay cutoffs —
+    // not one per period, so someone overdue on several weeks doesn't spam
+    // the list with a separate line for each.
+    const duePayrolls = computeDuePayrolls(staffList, payrollRuns, today);
+    const dueByStaff = new Map<string, typeof duePayrolls>();
+    for (const due of duePayrolls) {
+      const existing = dueByStaff.get(due.staff.id) ?? [];
+      existing.push(due);
+      dueByStaff.set(due.staff.id, existing);
+    }
+    for (const [staffId, dueForStaff] of dueByStaff) {
+      const member = dueForStaff[0].staff;
+      const latest = dueForStaff[dueForStaff.length - 1];
+      // period.key is a full date ("2026-07-01") — its first 7 characters
+      // are the YYYY-MM Payroll's month picker expects.
+      const latestMonthKey = latest.period.key.slice(0, 7);
+      list.push({
+        id: `payroll-${staffId}`,
+        href: `/payroll?month=${latestMonthKey}`,
+        title: `${member.name}'s pay is due`,
+        detail:
+          dueForStaff.length === 1
+            ? latest.period.label
+            : `${dueForStaff.length} pay periods pending · latest ${latest.period.label}`,
+        tone: "rose",
+      });
+    }
+
     return list;
-  }, [bookings, products, now]);
+  }, [bookings, products, staffList, payrollRuns, now]);
 
   // Ring the bell once per genuinely new notification, never on a refresh.
   // Bookings and products load at different times, so notes.length jumps
@@ -139,7 +194,7 @@ export default function Notifications() {
   // that as the baseline, and only ring afterwards, and only when an id
   // shows up that wasn't in the previous snapshot.
   useEffect(() => {
-    if (bookingsLoading || !productsLoaded) return;
+    if (bookingsLoading || !productsLoaded || !payrollLoaded) return;
 
     const currentIds = new Set(notes.map((note) => note.id));
     const previousIds = seenNoteIdsRef.current;
@@ -152,7 +207,13 @@ export default function Notifications() {
     }
 
     seenNoteIdsRef.current = currentIds;
-  }, [notes, bookingsLoading, productsLoaded, settings?.notification_sound_enabled]);
+  }, [
+    notes,
+    bookingsLoading,
+    productsLoaded,
+    payrollLoaded,
+    settings?.notification_sound_enabled,
+  ]);
 
   return (
     <div className="relative">

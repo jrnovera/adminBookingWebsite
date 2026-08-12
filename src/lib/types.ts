@@ -74,9 +74,14 @@ export type Staff = {
   base_salary: number;
   /** Per-hour rate — used when salary_type is 'hourly'. */
   hourly_rate: number;
+  /** How often this person is actually paid — decides how Payroll splits a
+   * month into cutoffs: one period, two (1st–15th/16th–end), or one per week. */
+  pay_frequency: PayFrequency;
 };
 
 export type SalaryType = "monthly" | "hourly";
+
+export type PayFrequency = "weekly" | "semi_monthly" | "monthly";
 
 export type AttendanceStatus =
   | "present"

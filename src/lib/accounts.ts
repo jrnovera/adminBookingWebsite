@@ -30,7 +30,12 @@ export async function updateAccount(
   if (error) throw new Error(error.message);
 }
 
-const FUNCTIONS_URL = "https://sdticckqzxmgjbmbqlaj.supabase.co/functions/v1";
+// Derived from the configured project rather than hardcoded — a hardcoded
+// ref silently keeps calling the old project after the Supabase URL changes,
+// which is exactly what happened when this app was pointed at a new database.
+const FUNCTIONS_URL = `${
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
+}/functions/v1`;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 async function readError(res: Response): Promise<string> {

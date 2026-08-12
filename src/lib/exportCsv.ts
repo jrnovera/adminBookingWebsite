@@ -125,6 +125,7 @@ export function exportPayrollCsv(rows: StaffPayrollSummary[], monthKey: string) 
   const header = [
     "Staff",
     "Pay type",
+    "Cutoff",
     "Present",
     "Late",
     "Half day",
@@ -132,6 +133,8 @@ export function exportPayrollCsv(rows: StaffPayrollSummary[], monthKey: string) 
     "Absent",
     "Unmarked",
     "Hours worked",
+    "Late minutes",
+    "Late deduction",
     "Base pay",
     "Bonus",
     "Commission",
@@ -143,6 +146,7 @@ export function exportPayrollCsv(rows: StaffPayrollSummary[], monthKey: string) 
     [
       r.staff.name,
       r.staff.salary_type,
+      r.period.label,
       r.statusCounts.present,
       r.statusCounts.late,
       r.statusCounts.half_day,
@@ -150,6 +154,8 @@ export function exportPayrollCsv(rows: StaffPayrollSummary[], monthKey: string) 
       r.statusCounts.absent,
       r.unmarkedDays,
       r.hoursWorked.toFixed(2),
+      r.lateMinutesTotal,
+      r.lateDeductionTotal.toFixed(2),
       r.basePay.toFixed(2),
       r.bonusTotal.toFixed(2),
       r.commissionTotal.toFixed(2),

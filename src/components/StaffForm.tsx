@@ -49,6 +49,9 @@ export default function StaffForm({
   const [hourlyRate, setHourlyRate] = useState(
     String(staff?.hourly_rate ?? 0)
   );
+  const [payFrequency, setPayFrequency] = useState<
+    "weekly" | "semi_monthly" | "monthly"
+  >(staff?.pay_frequency ?? "monthly");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,6 +94,7 @@ export default function StaffForm({
       salary_type: salaryType,
       base_salary: Math.max(0, Number(baseSalary) || 0),
       hourly_rate: Math.max(0, Number(hourlyRate) || 0),
+      pay_frequency: payFrequency,
     };
 
     try {
@@ -276,9 +280,39 @@ export default function StaffForm({
               />
             )}
           </div>
+
+          <div className="mt-3">
+            <span className="mb-1.5 block text-xs uppercase tracking-wide text-muted">
+              Paid every
+            </span>
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ["weekly", "Weekly"],
+                  ["semi_monthly", "15 days"],
+                  ["monthly", "Monthly"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPayFrequency(value)}
+                  className={`rounded-lg px-3 py-1.5 text-xs transition ${
+                    payFrequency === value
+                      ? "bg-foreground text-white"
+                      : "border border-line hover:bg-background"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <p className="mt-1.5 text-xs text-muted">
             Used by Payroll to compute pay from Attendance — see the
-            Attendance and Payroll pages.
+            Attendance and Payroll pages. &ldquo;Paid every&rdquo; decides
+            how Payroll splits the month into cutoffs for this person.
           </p>
         </div>
 
