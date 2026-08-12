@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchProducts, stockLevel } from "@/lib/inventory";
 import { formatDateLong, toDateKey } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
+import { playNotificationSound } from "@/lib/notificationSound";
 import type { Product } from "@/lib/types";
 
 type Note = {
@@ -29,6 +30,7 @@ export default function Notifications() {
   // Shared hook so the bell picks up realtime inserts like every other page.
   const { bookings } = useBookings();
   const [products, setProducts] = useState<Product[]>([]);
+  const prevNotificationCountRef = useRef<number>(0);
 
   // Kept in state and ticked rather than read during render: notes derived from
   // the current time would otherwise freeze at whatever moment the dashboard
@@ -45,6 +47,7 @@ export default function Notifications() {
     return () => clearInterval(timer);
   }, []);
 
+  // Memoize the notes early so we can use them in the effect below
   const notes = useMemo(() => {
     const today = toDateKey(new Date(now));
     const list: Note[] = [];
@@ -120,6 +123,19 @@ export default function Notifications() {
 
     return list;
   }, [bookings, products, now]);
+
+  // Play notification sound when new notifications arrive
+  useEffect(() => {
+    const currentCount = notes.length;
+    const prevCount = prevNotificationCountRef.current;
+
+    // Only play sound if notifications increased (not on initial mount)
+    if (prevCount > 0 && currentCount > prevCount) {
+      playNotificationSound();
+    }
+
+    prevNotificationCountRef.current = currentCount;
+  }, [notes.length]);
 
   return (
     <div className="relative">

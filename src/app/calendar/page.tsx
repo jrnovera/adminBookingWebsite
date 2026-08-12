@@ -45,9 +45,12 @@ export default function CalendarPage() {
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
   const toast = useToast();
-  const { session } = useAuth();
+  const { session, isAdminOrAbove } = useAuth();
   const actor = session?.user.email ?? null;
   const dayCount = useVisibleDayCount();
+
+  // Only admin and superadmin can edit the calendar
+  const canEdit = isAdminOrAbove;
   const [staff, setStaff] = useState<Staff[]>([]);
   const [timeOff, setTimeOff] = useState<StaffTimeOff[]>([]);
   const [blocks, setBlocks] = useState<StaffBlock[]>([]);
@@ -321,6 +324,55 @@ export default function CalendarPage() {
     []
   );
 
+  // Wrap handlers with permission checks
+  const permittedHandleMove = useCallback(
+    (booking: Booking, dateKey: string, startMinutes: number) => {
+      if (!canEdit) {
+        toast.error(
+          "Permission denied",
+          "Only admins can reschedule appointments"
+        );
+        return;
+      }
+      handleMove(booking, dateKey, startMinutes);
+    },
+    [canEdit, handleMove, toast]
+  );
+
+  const permittedHandleStaffMove = useCallback(
+    (
+      booking: Booking,
+      dateKey: string,
+      startMinutes: number,
+      staffId: string,
+      staffName: string
+    ) => {
+      if (!canEdit) {
+        toast.error(
+          "Permission denied",
+          "Only admins can reassign appointments"
+        );
+        return;
+      }
+      handleStaffMove(booking, dateKey, startMinutes, staffId, staffName);
+    },
+    [canEdit, handleStaffMove, toast]
+  );
+
+  const permittedHandleCreate = useCallback(
+    (dateKey: string, minutes: number, staffId?: string) => {
+      if (!canEdit) {
+        toast.error(
+          "Permission denied",
+          "Only admins can create appointments"
+        );
+        return;
+      }
+      setCreating({ dateKey, minutes, staffId });
+    },
+    [canEdit, toast]
+  );
+
   const rangeLabel = useMemo(() => {
     if (view === "day") {
       return cursor.toLocaleDateString("en-US", {
@@ -386,7 +438,9 @@ export default function CalendarPage() {
               onClick={() =>
                 setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
               }
-              className="btn-primary order-first flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover sm:order-none"
+              disabled={!canEdit}
+              title={!canEdit ? "Only admins can create appointments" : undefined}
+              className="btn-primary order-first flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-60 sm:order-none"
             >
               <IconPlus size={15} />
               <span className="whitespace-nowrap">
@@ -453,7 +507,9 @@ export default function CalendarPage() {
               onClick={() =>
                 setBlocking({ dateKey: toDateKey(cursor), minutes: dayStart })
               }
-              className="btn-ghost flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background"
+              disabled={!canEdit}
+              title={!canEdit ? "Only admins can block time" : undefined}
+              className="btn-ghost flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background disabled:opacity-60"
             >
               <IconBan size={15} />
               <span className="hidden sm:inline">Block time</span>
@@ -545,11 +601,9 @@ export default function CalendarPage() {
             timeOff={timeOff}
             dayStart={dayStart}
             dayEnd={dayEnd}
-            onMove={handleStaffMove}
+            onMove={permittedHandleStaffMove}
             onSelect={setSelected}
-            onCreate={(dateKey, minutes, staffId) =>
-              setCreating({ dateKey, minutes, staffId })
-            }
+            onCreate={permittedHandleCreate}
             onSelectBlock={(block) => {
               if (block.id.startsWith("break-")) return;
               setSelectedBlock(block);
@@ -563,7 +617,7 @@ export default function CalendarPage() {
             dayStart={dayStart}
             dayEnd={dayEnd}
             daysOff={daysOff}
-            onMove={handleMove}
+            onMove={permittedHandleMove}
             onSelect={setSelected}
             onSelectBlock={(block) => {
               // Shop-break bands are derived from Settings, not real rows.

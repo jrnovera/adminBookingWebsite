@@ -5,7 +5,12 @@ import StatusBadge from "./StatusBadge";
 import HomeBadge from "./HomeBadge";
 import { IconClose, IconPencil } from "./Icons";
 import { rescheduleBooking, setBookingPaid, updateBookingStatus } from "@/lib/bookings";
-import { formatDateLong, formatMoney } from "@/lib/format";
+import {
+  formatDateLong,
+  formatMinutes,
+  formatMoney,
+  parseTimeToMinutes,
+} from "@/lib/format";
 import { useServiceOptions } from "@/lib/services";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
@@ -30,6 +35,28 @@ const statusLabels: Record<BookingStatus, string> = {
 
 const methods = ["Cash", "Card", "Gift Card", "Online"];
 
+/**
+ * booking_time is stored throughout the app as a 12-hour label ("9:00 AM") —
+ * the public booking site writes it that way, NewBookingModal's slot picker
+ * writes it that way, and the SQL double-booking guard, Calendar and Reports
+ * all read it that way. A native `<input type="time">` only accepts 24-hour
+ * "HH:MM", though, so a manually-booked appointment's time silently failed
+ * to display (and therefore to edit) here. These convert at the boundary —
+ * the input itself still speaks 24-hour, but nothing else in the app has to.
+ */
+function to24Hour(label: string): string {
+  const minutes = parseTimeToMinutes(label);
+  if (minutes === null) return "";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+}
+
+function to12Hour(value: string): string {
+  const minutes = parseTimeToMinutes(value);
+  return minutes === null ? value : formatMinutes(minutes);
+}
+
 export default function BookingDrawer({
   booking,
   staff,
@@ -42,26 +69,49 @@ export default function BookingDrawer({
   onChanged: () => void;
 }) {
   const { settings } = useShop();
-  const { session } = useAuth();
+  const { session, isAdminOrAbove } = useAuth();
   const actor = session?.user.email ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Only admin and superadmin can edit bookings
+  const canEdit = isAdminOrAbove;
   const [method, setMethod] = useState(booking.payment_method ?? "Cash");
   const [editing, setEditing] = useState(false);
+  // Separate from `editing` above (which is scheduling only) — contact
+  // details are a distinct concern with their own Edit/Save affordance, so
+  // fixing a mistyped phone number doesn't require touching the service or
+  // staff assignment at the same time.
+  const [contactEditing, setContactEditing] = useState(false);
 
   // Draft fields for edit mode — seeded from the booking whenever it (or
   // edit mode) changes, so switching bookings never shows stale input.
   const [serviceId, setServiceId] = useState(booking.service_id);
   const [staffId, setStaffId] = useState(booking.staff_id);
   const [date, setDate] = useState(booking.booking_date);
-  const [time, setTime] = useState(booking.booking_time);
+  // Always 24-hour here, to match what the <input type="time"> below can
+  // actually display — converted back to the app's 12-hour convention right
+  // before it's sent anywhere. See to24Hour/to12Hour above.
+  const [time, setTime] = useState(to24Hour(booking.booking_time));
+
+  const [fullName, setFullName] = useState(booking.full_name);
+  const [email, setEmail] = useState(booking.email);
+  const [mobile, setMobile] = useState(booking.mobile);
+  const [address, setAddress] = useState(booking.address ?? "");
+  const [notes, setNotes] = useState(booking.notes ?? "");
 
   useEffect(() => {
     setServiceId(booking.service_id);
     setStaffId(booking.staff_id);
     setDate(booking.booking_date);
-    setTime(booking.booking_time);
+    setTime(to24Hour(booking.booking_time));
     setEditing(false);
+    setFullName(booking.full_name);
+    setEmail(booking.email);
+    setMobile(booking.mobile);
+    setAddress(booking.address ?? "");
+    setNotes(booking.notes ?? "");
+    setContactEditing(false);
   }, [booking]);
 
   async function run(action: () => Promise<void>) {
@@ -89,7 +139,7 @@ export default function BookingDrawer({
     serviceId !== booking.service_id ||
     staffId !== booking.staff_id ||
     date !== booking.booking_date ||
-    time !== booking.booking_time;
+    time !== to24Hour(booking.booking_time);
 
   // Preview the new total live as the admin edits, same math NewBookingModal
   // uses, so there are no surprises before Save is pressed.
@@ -113,11 +163,15 @@ export default function BookingDrawer({
 
     const serviceChanged =
       !!selectedService && selectedService.id !== booking.service_id;
+    // Convert back to the app-wide 12-hour convention before this goes
+    // anywhere else — Calendar, Reports, and the SQL double-booking guard
+    // all expect "9:00 AM", not the input's "09:00".
+    const timeLabel = to12Hour(time);
 
     await run(async () => {
       await rescheduleBooking(booking.id, {
         booking_date: date,
-        booking_time: time,
+        booking_time: timeLabel,
         staff_id: selectedStaff.id,
         staff_name: selectedStaff.name,
         ...(serviceChanged && selectedService
@@ -142,11 +196,11 @@ export default function BookingDrawer({
       if (selectedStaff.id !== booking.staff_id) {
         parts.push(`Staff ${booking.staff_name} → ${selectedStaff.name}`);
       }
-      if (date !== booking.booking_date || time !== booking.booking_time) {
+      if (date !== booking.booking_date || time !== to24Hour(booking.booking_time)) {
         parts.push(
           `When ${formatDateLong(booking.booking_date)} ${
             booking.booking_time
-          } → ${formatDateLong(date)} ${time}`
+          } → ${formatDateLong(date)} ${timeLabel}`
         );
       }
 
@@ -160,6 +214,47 @@ export default function BookingDrawer({
       });
     });
     setEditing(false);
+  }
+
+  const contactChanged =
+    fullName.trim() !== booking.full_name ||
+    email.trim() !== booking.email ||
+    mobile.trim() !== booking.mobile ||
+    address.trim() !== (booking.address ?? "") ||
+    notes.trim() !== (booking.notes ?? "");
+
+  async function handleSaveContact() {
+    if (!fullName.trim() || !email.trim() || !mobile.trim()) {
+      setError("Name, email and mobile can't be blank.");
+      return;
+    }
+
+    await run(async () => {
+      await rescheduleBooking(booking.id, {
+        full_name: fullName.trim(),
+        email: email.trim(),
+        mobile: mobile.trim(),
+        address: address.trim() || null,
+        notes: notes.trim() || null,
+      });
+
+      const parts: string[] = [];
+      if (fullName.trim() !== booking.full_name) parts.push("Name");
+      if (email.trim() !== booking.email) parts.push("Email");
+      if (mobile.trim() !== booking.mobile) parts.push("Mobile");
+      if (address.trim() !== (booking.address ?? "")) parts.push("Address");
+      if (notes.trim() !== (booking.notes ?? "")) parts.push("Notes");
+
+      logActivity({
+        actor,
+        entity: "booking",
+        entity_id: booking.id,
+        action: "edited",
+        summary: `Edited ${booking.full_name}'s contact details`,
+        detail: parts.length ? `Changed: ${parts.join(", ")}` : null,
+      });
+    });
+    setContactEditing(false);
   }
 
   return (
@@ -178,11 +273,6 @@ export default function BookingDrawer({
               </h2>
               <HomeBadge location={booking.service_location} />
             </div>
-            <p className="truncate text-sm text-muted">{booking.email}</p>
-            <p className="text-sm text-muted">{booking.mobile}</p>
-            {booking.address && (
-              <p className="mt-0.5 text-sm text-muted">{booking.address}</p>
-            )}
           </div>
           <button
             onClick={onClose}
@@ -211,9 +301,105 @@ export default function BookingDrawer({
         <section className="mx-6 mt-4 rounded-2xl border border-line">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Contact
+            </p>
+            {!contactEditing && canEdit && (
+              <button
+                onClick={() => setContactEditing(true)}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background"
+              >
+                <IconPencil size={13} />
+                Edit
+              </button>
+            )}
+          </div>
+
+          {contactEditing ? (
+            <div className="space-y-3 p-4">
+              <Field label="Name">
+                <input
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+                />
+              </Field>
+              <Field label="Email">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+                />
+              </Field>
+              <Field label="Mobile">
+                <input
+                  type="tel"
+                  value={mobile}
+                  onChange={(event) => setMobile(event.target.value)}
+                  className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+                />
+              </Field>
+              <Field label="Address">
+                <input
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  placeholder={
+                    booking.service_location === "home"
+                      ? "Required for home service"
+                      : "Optional"
+                  }
+                  className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+                />
+              </Field>
+              <Field label="Notes">
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+                />
+              </Field>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleSaveContact}
+                  disabled={busy || !contactChanged}
+                  className="btn-primary flex-1 py-2.5 text-sm hover:btn-primary-hover disabled:opacity-50"
+                >
+                  {busy ? "Saving…" : "Save changes"}
+                </button>
+                <button
+                  onClick={() => {
+                    setFullName(booking.full_name);
+                    setEmail(booking.email);
+                    setMobile(booking.mobile);
+                    setAddress(booking.address ?? "");
+                    setNotes(booking.notes ?? "");
+                    setContactEditing(false);
+                    setError(null);
+                  }}
+                  className="btn-ghost px-4 py-2.5 text-sm hover:bg-background"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <dl className="space-y-2 p-4 text-sm">
+              <Row label="Email">{booking.email}</Row>
+              <Row label="Mobile">{booking.mobile}</Row>
+              {booking.address && <Row label="Address">{booking.address}</Row>}
+              {booking.notes && <Row label="Notes">{booking.notes}</Row>}
+            </dl>
+          )}
+        </section>
+
+        <section className="mx-6 mt-4 rounded-2xl border border-line">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
               Appointment
             </p>
-            {!editing && (
+            {!editing && canEdit && (
               <button
                 onClick={() => setEditing(true)}
                 className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background"
@@ -328,7 +514,7 @@ export default function BookingDrawer({
                     setServiceId(booking.service_id);
                     setStaffId(booking.staff_id);
                     setDate(booking.booking_date);
-                    setTime(booking.booking_time);
+                    setTime(to24Hour(booking.booking_time));
                     setEditing(false);
                     setError(null);
                   }}
@@ -372,7 +558,6 @@ export default function BookingDrawer({
               {formatMoney(Number(booking.total), booking.currency)}
             </span>
           </Row>
-          {booking.notes && <Row label="Notes">{booking.notes}</Row>}
           {booking.voucher_code && (
             <Row label="Voucher">{booking.voucher_code}</Row>
           )}
@@ -386,7 +571,7 @@ export default function BookingDrawer({
             {statuses.map((status) => (
               <button
                 key={status}
-                disabled={busy || booking.status === status}
+                disabled={busy || booking.status === status || !canEdit}
                 onClick={() =>
                   run(async () => {
                     await updateBookingStatus(booking.id, status);
@@ -422,7 +607,11 @@ export default function BookingDrawer({
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
             Payment
           </p>
-          {booking.is_paid ? (
+          {!canEdit ? (
+            <p className="text-sm text-muted">
+              Only admins can manage payments.
+            </p>
+          ) : booking.is_paid ? (
             <button
               disabled={busy}
               onClick={() =>

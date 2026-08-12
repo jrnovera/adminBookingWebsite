@@ -132,6 +132,13 @@ export async function rescheduleBooking(
     tax?: number;
     total?: number;
     discount?: number;
+    // Client contact details — editable from BookingDrawer's Contact
+    // section, separately from the scheduling fields above.
+    full_name?: string;
+    email?: string;
+    mobile?: string;
+    address?: string | null;
+    notes?: string | null;
   }
 ) {
   const supabase = getSupabaseClient();
