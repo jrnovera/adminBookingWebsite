@@ -6,7 +6,7 @@ import HomeBadge from "./HomeBadge";
 import { IconClose, IconPencil } from "./Icons";
 import { rescheduleBooking, setBookingPaid, updateBookingStatus } from "@/lib/bookings";
 import { formatDateLong, formatMoney } from "@/lib/format";
-import { services } from "@/lib/services";
+import { useServiceOptions } from "@/lib/services";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
@@ -77,6 +77,7 @@ export default function BookingDrawer({
     }
   }
 
+  const services = useServiceOptions();
   const knownService = services.find((item) => item.id === booking.service_id);
   const selectedService =
     services.find((item) => item.id === serviceId) ?? knownService;

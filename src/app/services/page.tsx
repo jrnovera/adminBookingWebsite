@@ -23,6 +23,9 @@ import type { Service, ServiceCategory } from "@/lib/types";
 import { useRequireRole } from "@/lib/useRequireRole";
 
 type Filter = "all" | "services" | "packages";
+/** Where an item can be booked. "both" items show under salon *and* home,
+ * since they genuinely are bookable either way. */
+type LocationFilter = "all" | "salon" | "home";
 
 export default function ServicesPage() {
   useRequireRole({ blockStaff: true });
@@ -35,6 +38,7 @@ export default function ServicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | "all">("all");
   const [filter, setFilter] = useState<Filter>("all");
+  const [locationFilter, setLocationFilter] = useState<LocationFilter>("all");
   const [query, setQuery] = useState("");
 
   const [editingItem, setEditingItem] = useState<Service | "new-service" | "new-package" | null>(null);
@@ -71,10 +75,16 @@ export default function ServicesPage() {
       if (activeCategory !== "all" && item.category_id !== activeCategory) return false;
       if (filter === "services" && item.is_package) return false;
       if (filter === "packages" && !item.is_package) return false;
+      // "both" items belong to either list — they really are bookable both
+      // ways, so filtering to salon must not hide them.
+      if (locationFilter !== "all") {
+        const at = item.available_at ?? "both";
+        if (at !== "both" && at !== locationFilter) return false;
+      }
       if (term && !item.name.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [items, activeCategory, filter, query]);
+  }, [items, activeCategory, filter, locationFilter, query]);
 
   async function toggleActive(item: Service) {
     setItems((current) =>
@@ -203,6 +213,24 @@ export default function ServicesPage() {
                 }`}
               >
                 {f}
+              </button>
+            ))}
+          </div>
+
+          {/* Where it can be booked — mirrors the Bookable-at field on the
+              item form, so you can check the home menu at a glance. */}
+          <div className="flex gap-1 rounded-xl border border-line p-1">
+            {(["all", "salon", "home"] as LocationFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setLocationFilter(f)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  locationFilter === f
+                    ? "bg-foreground text-surface"
+                    : "text-muted hover:bg-background"
+                }`}
+              >
+                {f === "all" ? "Anywhere" : f === "salon" ? "In salon" : "Home"}
               </button>
             ))}
           </div>

@@ -6,6 +6,7 @@ import type {
   Booking,
   BookingStatus,
   Client,
+  ServiceLocation,
   Staff,
   StaffTimeOff,
 } from "./types";
@@ -82,6 +83,11 @@ export type NewBooking = {
   notes: string | null;
   status: BookingStatus;
   is_paid: boolean;
+  /** Where the appointment happens. The call-out fee, tax and total for a
+   * home visit are recomputed by the insert trigger from shop_settings —
+   * never sent from here — see booking-artisan/supabase/004_home_service.sql.
+   * A home booking with a blank address is rejected by a check constraint. */
+  service_location?: ServiceLocation;
 };
 
 export async function createBooking(input: NewBooking): Promise<string> {

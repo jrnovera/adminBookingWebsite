@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { checkoutBooking } from "@/lib/bookings";
 import { fetchProducts } from "@/lib/inventory";
-import { services } from "@/lib/services";
+import { useServiceOptions } from "@/lib/services";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
@@ -30,6 +30,7 @@ export default function PosCheckout({
     Array.isArray(booking.addons) ? booking.addons : []
   );
   const [products, setProducts] = useState<Product[]>([]);
+  const services = useServiceOptions();
   const [tipPercent, setTipPercent] = useState<number | null>(0);
   const [customTip, setCustomTip] = useState("");
   const [method, setMethod] = useState(booking.payment_method ?? "Cash");

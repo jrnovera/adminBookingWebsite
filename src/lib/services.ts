@@ -1,5 +1,13 @@
-// Mirrors the service catalogue on the public booking site so walk-in
-// bookings created here match what customers can book online.
+"use client";
+
+import { useEffect, useState } from "react";
+import { fetchCatalogServices } from "./serviceCatalog";
+
+/**
+ * The flat shape the quick-pick service dropdowns use (POS checkout, booking
+ * drawer). Deliberately narrower than the full `Service` row — these pickers
+ * only need something to label and price.
+ */
 export type ServiceOption = {
   id: string;
   name: string;
@@ -7,16 +15,44 @@ export type ServiceOption = {
   price: number;
 };
 
-export const services: ServiceOption[] = [
-  {
-    id: "womens-haircut",
-    name: "Women's Haircut & Blow Dry",
-    duration: 60,
-    price: 65,
-  },
-  { id: "balayage", name: "Balayage / Highlights", duration: 120, price: 150 },
-  { id: "keratin", name: "Keratin Treatment", duration: 90, price: 120 },
-  { id: "gel-manicure", name: "Gel Manicure", duration: 45, price: 40 },
-  { id: "classic-pedicure", name: "Classic Pedicure", duration: 60, price: 50 },
-  { id: "deep-tissue", name: "Deep Tissue Massage", duration: 60, price: 80 },
-];
+/**
+ * Live service options from the real catalogue that Services & Packages
+ * manages.
+ *
+ * This used to be a hardcoded array of six invented treatments, which meant a
+ * booking made from the admin app carried a service id and price that existed
+ * nowhere else — the calendar, the booking site and the reports all disagreed
+ * about what had been sold. Reading the real table keeps every surface in
+ * step.
+ *
+ * Returns `[]` while loading or if the fetch fails; callers already handle an
+ * empty dropdown, and a stale fake menu is worse than an empty one.
+ */
+export function useServiceOptions(): ServiceOption[] {
+  const [options, setOptions] = useState<ServiceOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCatalogServices().then(
+      (rows) => {
+        if (cancelled) return;
+        setOptions(
+          rows
+            .filter((row) => row.active)
+            .map((row) => ({
+              id: row.id,
+              name: row.name,
+              duration: row.duration_minutes,
+              price: Number(row.price),
+            }))
+        );
+      },
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return options;
+}

@@ -593,6 +593,8 @@ export default function CalendarPage() {
       {creating && (
         <NewBookingModal
           staff={activeStaff}
+          bookings={bookings}
+          timeOff={timeOff}
           defaultStaffId={creating.staffId ?? currentStaff?.id ?? null}
           defaultDate={creating.dateKey}
           defaultMinutes={creating.minutes}
