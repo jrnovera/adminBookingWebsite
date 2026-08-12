@@ -29,10 +29,16 @@ const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export default function Notifications() {
   const [open, setOpen] = useState(false);
   // Shared hook so the bell picks up realtime inserts like every other page.
-  const { bookings } = useBookings();
+  const { bookings, loading: bookingsLoading } = useBookings();
   const { settings } = useShop();
   const [products, setProducts] = useState<Product[]>([]);
-  const prevNotificationCountRef = useRef<number>(0);
+  const [productsLoaded, setProductsLoaded] = useState(false);
+  // `null` until the first fully-loaded snapshot of notes is captured — a
+  // baseline to diff future snapshots against, not something to ring for.
+  // Without this, bookings and products resolve at different times after a
+  // refresh, notes.length jumps more than once before settling, and the bell
+  // would ring on every reload even though nothing is actually new.
+  const seenNoteIdsRef = useRef<Set<string> | null>(null);
 
   // Kept in state and ticked rather than read during render: notes derived from
   // the current time would otherwise freeze at whatever moment the dashboard
@@ -41,7 +47,7 @@ export default function Notifications() {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    fetchProducts().then(setProducts, () => {});
+    fetchProducts().then(setProducts, () => {}).finally(() => setProductsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -126,23 +132,27 @@ export default function Notifications() {
     return list;
   }, [bookings, products, now]);
 
-  // Play notification sound when new notifications arrive
+  // Ring the bell once per genuinely new notification, never on a refresh.
+  // Bookings and products load at different times, so notes.length jumps
+  // more than once before things settle — comparing raw counts would ring
+  // on every page load. Instead: wait until both sources have loaded, take
+  // that as the baseline, and only ring afterwards, and only when an id
+  // shows up that wasn't in the previous snapshot.
   useEffect(() => {
-    const currentCount = notes.length;
-    const prevCount = prevNotificationCountRef.current;
+    if (bookingsLoading || !productsLoaded) return;
 
-    // Only play sound if notifications increased (not on initial mount)
-    // and if notification sound is enabled in settings
-    if (
-      prevCount > 0 &&
-      currentCount > prevCount &&
-      settings?.notification_sound_enabled !== false
-    ) {
-      playNotificationSound();
+    const currentIds = new Set(notes.map((note) => note.id));
+    const previousIds = seenNoteIdsRef.current;
+
+    if (previousIds) {
+      const hasNew = [...currentIds].some((id) => !previousIds.has(id));
+      if (hasNew && settings?.notification_sound_enabled !== false) {
+        playNotificationSound();
+      }
     }
 
-    prevNotificationCountRef.current = currentCount;
-  }, [notes.length, settings?.notification_sound_enabled]);
+    seenNoteIdsRef.current = currentIds;
+  }, [notes, bookingsLoading, productsLoaded, settings?.notification_sound_enabled]);
 
   return (
     <div className="relative">

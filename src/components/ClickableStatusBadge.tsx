@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { BookingStatus } from "@/lib/types";
 import { IconChevronDown } from "./Icons";
 
@@ -38,6 +39,9 @@ interface ClickableStatusBadgeProps {
   isChanging?: boolean;
 }
 
+const MENU_WIDTH = 152; // matches min-w-[9.5rem] below
+const MENU_MAX_HEIGHT = 256; // matches max-h-64 below
+
 export default function ClickableStatusBadge({
   status,
   onStatusChange,
@@ -48,21 +52,67 @@ export default function ClickableStatusBadge({
   // Flips true for a moment right after a successful change, driving a
   // one-shot flash so the badge visibly confirms the update landed.
   const [justChanged, setJustChanged] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Position computed from the button's actual on-screen location and
+  // rendered through a portal — see note below on why.
+  const [menuPos, setMenuPos] = useState<{
+    top: number;
+    left: number;
+    openUpward: boolean;
+  } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward =
+      spaceBelow < MENU_MAX_HEIGHT && rect.top > spaceBelow;
+    setMenuPos({
+      top: openUpward ? rect.top - 6 : rect.bottom + 6,
+      left: Math.min(
+        Math.max(rect.right - MENU_WIDTH, 8),
+        window.innerWidth - MENU_WIDTH - 8
+      ),
+      openUpward,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
 
   useEffect(() => {
+    if (!open) return;
+
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (
+        buttonRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpen(false);
     }
 
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
+    // A table with many rows scrolls internally, and the page itself can
+    // scroll too — the menu is rendered in a portal outside both, so it has
+    // to close (rather than drift out of place) whenever either happens.
+    function handleScrollOrResize() {
+      setOpen(false);
     }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
     };
   }, [open]);
 
@@ -86,12 +136,13 @@ export default function ClickableStatusBadge({
   }
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative inline-block">
       <button
+        ref={buttonRef}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setOpen(!open);
+          setOpen((value) => !value);
         }}
         disabled={disabled || isChanging}
         className={`group inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold sm:text-sm transition-all duration-200 ${
@@ -119,35 +170,53 @@ export default function ClickableStatusBadge({
         )}
       </button>
 
-      {open && onStatusChange && (
-        <div className="animate-fade-in absolute right-0 top-full z-50 mt-1.5 min-w-[9.5rem] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
-          {(["pending", "confirmed", "completed", "cancelled"] as const).map(
-            (s) => (
-              <button
-                key={s}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleStatusChange(s);
-                }}
-                disabled={s === status || isChanging}
-                className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                  s === status
-                    ? "bg-foreground/10 text-foreground"
-                    : "text-foreground hover:bg-background active:bg-background/70"
-                } disabled:cursor-not-allowed`}
-              >
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full transition-colors ${
-                    s === status ? "bg-emerald-400" : "bg-foreground/20"
-                  }`}
-                />
-                {labels[s]}
-              </button>
-            )
-          )}
-        </div>
-      )}
+      {open &&
+        onStatusChange &&
+        menuPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: menuPos.openUpward ? undefined : menuPos.top,
+              bottom: menuPos.openUpward
+                ? window.innerHeight - menuPos.top
+                : undefined,
+              left: menuPos.left,
+              width: MENU_WIDTH,
+              maxHeight: MENU_MAX_HEIGHT,
+            }}
+            className="animate-fade-in z-50 overflow-y-auto rounded-xl border border-line bg-surface shadow-lg"
+          >
+            {(["pending", "confirmed", "completed", "cancelled"] as const).map(
+              (s) => (
+                <button
+                  key={s}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleStatusChange(s);
+                  }}
+                  disabled={s === status || isChanging}
+                  className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    s === status
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-foreground hover:bg-background active:bg-background/70"
+                  } disabled:cursor-not-allowed`}
+                >
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full transition-colors ${
+                      s === status ? "bg-emerald-400" : "bg-foreground/20"
+                    }`}
+                  />
+                  {labels[s]}
+                </button>
+              )
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

@@ -200,7 +200,7 @@ export default function AppointmentsPage() {
       </div>
 
       <main className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6 xl:flex-row">
-        <section className="min-w-0 flex-1 overflow-hidden card">
+        <section className="min-w-0 flex-1 card overflow-hidden">
           {error && (
             <div className="p-4">
               <ErrorBanner message={error} />
@@ -216,44 +216,50 @@ export default function AppointmentsPage() {
             />
           ) : (
             <>
-              {/* Desktop table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-line text-xs uppercase text-muted">
+              {/* Desktop table — dense, gridded, spreadsheet-style rows with
+                  a sticky header so long lists stay legible while scrolling.
+                  Overflow is scoped to this scroller only (not the card), so
+                  the status dropdown — rendered in a portal — is never
+                  clipped by a short container when there's just one row. */}
+              <div className="hidden max-h-[70vh] overflow-auto sm:block">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-surface text-xs uppercase text-muted shadow-[inset_0_-1px_0_var(--color-line)]">
                     <tr>
-                      <th className="px-5 py-3 font-medium">Client</th>
-                      <th className="px-5 py-3 font-medium">Service</th>
-                      <th className="px-5 py-3 font-medium">Staff</th>
-                      <th className="px-5 py-3 font-medium">When</th>
-                      <th className="px-5 py-3 font-medium">Total</th>
-                      <th className="px-5 py-3 font-medium">Status</th>
+                      <th className="border-b border-r border-line px-4 py-2.5 font-medium">Client</th>
+                      <th className="border-b border-r border-line px-4 py-2.5 font-medium">Service</th>
+                      <th className="border-b border-r border-line px-4 py-2.5 font-medium">Staff</th>
+                      <th className="border-b border-r border-line px-4 py-2.5 font-medium">When</th>
+                      <th className="border-b border-r border-line px-4 py-2.5 font-medium">Total</th>
+                      <th className="border-b border-line px-4 py-2.5 font-medium">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
-                    {visible.map((booking) => (
+                  <tbody>
+                    {visible.map((booking, index) => (
                       <tr
                         key={booking.id}
                         onClick={() => setSelected(booking)}
-                        className={`row-hover cursor-pointer hover:bg-background ${
+                        className={`row-hover cursor-pointer border-b border-line hover:bg-background ${
                           selected?.id === booking.id
                             ? "bg-primary-50/60"
+                            : index % 2 === 1
+                            ? "bg-foreground/[0.015]"
                             : ""
                         }`}
                       >
-                        <td className="px-5 py-3.5">
+                        <td className="border-r border-line px-4 py-2.5">
                           <p className="font-medium">{booking.full_name}</p>
                           <p className="text-xs text-muted">
                             {booking.mobile}
                           </p>
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="border-r border-line px-4 py-2.5">
                           <span className="flex flex-wrap items-center gap-1.5">
                             {booking.service_name}
                             <HomeBadge location={booking.service_location} />
                           </span>
                         </td>
-                        <td className="px-5 py-3.5">{booking.staff_name}</td>
-                        <td className="whitespace-nowrap px-5 py-3.5">
+                        <td className="border-r border-line px-4 py-2.5">{booking.staff_name}</td>
+                        <td className="whitespace-nowrap border-r border-line px-4 py-2.5">
                           <p className="text-xs sm:text-sm">
                             {formatDateLong(booking.booking_date)}
                           </p>
@@ -261,10 +267,10 @@ export default function AppointmentsPage() {
                             {booking.booking_time}
                           </p>
                         </td>
-                        <td className="px-5 py-3.5 tabular-nums">
+                        <td className="border-r border-line px-4 py-2.5 tabular-nums">
                           {formatMoney(Number(booking.total), booking.currency)}
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-4 py-2.5">
                           <ClickableStatusBadge
                             status={booking.status}
                             onStatusChange={(newStatus) => changeStatus(booking, newStatus)}
