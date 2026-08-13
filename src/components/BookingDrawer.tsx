@@ -73,7 +73,7 @@ export default function BookingDrawer({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { settings, shop } = useShop();
+  const { settings } = useShop();
   const { session, isAdminOrAbove } = useAuth();
   const actor = session?.user.email ?? null;
   const [busy, setBusy] = useState(false);
@@ -598,7 +598,7 @@ export default function BookingDrawer({
                     // Fire-and-forget: emails the client via the n8n
                     // workflow, only on the pending → confirmed transition.
                     if (status === "confirmed" && previousStatus !== "confirmed") {
-                      notifyAppointmentVerified(booking, shop?.shop_name);
+                      notifyAppointmentVerified(booking, settings?.shop_name);
                     }
                   })
                 }

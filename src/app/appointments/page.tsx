@@ -50,7 +50,7 @@ const filterLabels: Record<BookingStatus | "all", string> = {
 
 export default function AppointmentsPage() {
   const { bookings, loading, error, reload } = useBookings();
-  const { shop } = useShop();
+  const { settings } = useShop();
   const toast = useToast();
   const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
@@ -113,7 +113,7 @@ export default function AppointmentsPage() {
       // pending → confirmed transition, so re-saving an already-confirmed
       // booking doesn't resend the email.
       if (status === "confirmed" && booking.status !== "confirmed") {
-        notifyAppointmentVerified(booking, shop?.shop_name);
+        notifyAppointmentVerified(booking, settings?.shop_name);
       }
       logActivity({
         actor,
