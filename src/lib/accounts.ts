@@ -88,3 +88,51 @@ export async function createAccount(input: {
   });
   if (!res.ok) throw new Error(await readError(res));
 }
+
+/**
+ * Superadmin-only: delete an account permanently (see supabase/functions/delete-account).
+ * Requires the caller's own access token, which the Edge Function re-verifies server-side.
+ */
+export async function deleteAccount(userId: string) {
+  const {
+    data: { session },
+  } = await getSupabaseClient().auth.getSession();
+  if (!session) throw new Error("Not signed in");
+
+  const res = await fetch(`${FUNCTIONS_URL}/delete-account`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+}
+
+/**
+ * Superadmin-only: update an account's email and/or password
+ * (see supabase/functions/update-account). Requires the caller's own access token,
+ * which the Edge Function re-verifies server-side.
+ */
+export async function editAccount(
+  userId: string,
+  changes: Partial<{ email: string; password: string }>
+) {
+  const {
+    data: { session },
+  } = await getSupabaseClient().auth.getSession();
+  if (!session) throw new Error("Not signed in");
+
+  const res = await fetch(`${FUNCTIONS_URL}/update-account`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ userId, ...changes }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+}

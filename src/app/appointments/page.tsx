@@ -10,9 +10,14 @@ import { IconClock } from "@/components/Icons";
 import ExportBar from "@/components/ExportBar";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
-import { deleteBooking, updateBookingStatus } from "@/lib/bookings";
+import {
+  deleteBooking,
+  notifyAppointmentVerified,
+  updateBookingStatus,
+} from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
+import { useShop } from "@/lib/shop";
 import { formatDateLong, formatMoney } from "@/lib/format";
 import { exportBookingsCsv } from "@/lib/exportCsv";
 import { useBookings } from "@/lib/useBookings";
@@ -45,6 +50,7 @@ const filterLabels: Record<BookingStatus | "all", string> = {
 
 export default function AppointmentsPage() {
   const { bookings, loading, error, reload } = useBookings();
+  const { shop } = useShop();
   const toast = useToast();
   const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
@@ -103,6 +109,12 @@ export default function AppointmentsPage() {
         "Status updated",
         `${booking.full_name} is now ${filterLabels[status].toLowerCase()}.`
       );
+      // Fire-and-forget: emails the client via the n8n workflow. Only on the
+      // pending → confirmed transition, so re-saving an already-confirmed
+      // booking doesn't resend the email.
+      if (status === "confirmed" && booking.status !== "confirmed") {
+        notifyAppointmentVerified(booking, shop?.shop_name);
+      }
       logActivity({
         actor,
         entity: "booking",

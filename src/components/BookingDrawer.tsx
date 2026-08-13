@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 import HomeBadge from "./HomeBadge";
 import { IconClose, IconPencil } from "./Icons";
-import { rescheduleBooking, setBookingPaid, updateBookingStatus } from "@/lib/bookings";
+import {
+  notifyAppointmentVerified,
+  rescheduleBooking,
+  setBookingPaid,
+  updateBookingStatus,
+} from "@/lib/bookings";
 import {
   formatDateLong,
   formatMinutes,
@@ -68,7 +73,7 @@ export default function BookingDrawer({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { settings } = useShop();
+  const { settings, shop } = useShop();
   const { session, isAdminOrAbove } = useAuth();
   const actor = session?.user.email ?? null;
   const [busy, setBusy] = useState(false);
@@ -574,6 +579,7 @@ export default function BookingDrawer({
                 disabled={busy || booking.status === status || !canEdit}
                 onClick={() =>
                   run(async () => {
+                    const previousStatus = booking.status;
                     await updateBookingStatus(booking.id, status);
                     logActivity({
                       actor,
@@ -589,6 +595,11 @@ export default function BookingDrawer({
                         booking.booking_date
                       )} ${booking.booking_time}`,
                     });
+                    // Fire-and-forget: emails the client via the n8n
+                    // workflow, only on the pending → confirmed transition.
+                    if (status === "confirmed" && previousStatus !== "confirmed") {
+                      notifyAppointmentVerified(booking, shop?.shop_name);
+                    }
                   })
                 }
                 className={`rounded-xl px-3 py-1.5 text-xs transition disabled:opacity-50 ${

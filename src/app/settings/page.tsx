@@ -8,6 +8,7 @@ import {
   saveSettings,
   updateEmail,
   updatePassword,
+  updateShopNameWithAuth,
 } from "@/lib/settings";
 import { uploadImage } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
@@ -16,9 +17,11 @@ import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
 import { useRequireRole } from "@/lib/useRequireRole";
+import { useToast } from "@/components/Toast";
 
 export default function SettingsPage() {
   useRequireRole({ blockStaff: true });
+  const toast = useToast();
   const { session, isSuperAdmin } = useAuth();
   const actor = session?.user.email ?? null;
   const { reload } = useShop();
@@ -41,6 +44,7 @@ export default function SettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [shopStatus, setShopStatus] = useState<Status>(null);
 
   const [wipeConfirmText, setWipeConfirmText] = useState("");
@@ -124,9 +128,16 @@ export default function SettingsPage() {
   async function saveShop(event: React.FormEvent) {
     event.preventDefault();
     setShopStatus(null);
+    setSaving(true);
     try {
+      console.log("Saving shop name:", shopName.trim());
+
+      // Update shop name in auth user's metadata + shop_settings
+      await updateShopNameWithAuth(shopName.trim());
+      console.log("Shop name updated in auth");
+
+      // Update other settings (excluding shop_name since we handled it above)
       await saveSettings({
-        shop_name: shopName.trim(),
         logo_url: logoUrl,
         email: email.trim() || null,
         phone: phone.trim() || null,
@@ -141,8 +152,25 @@ export default function SettingsPage() {
         home_service_fee: Math.max(0, Number(homeServiceFee) || 0),
         notification_sound_enabled: notificationSoundEnabled,
       });
-      reload();
-      setShopStatus({ kind: "ok", message: "Business details saved." });
+      console.log("Settings saved");
+
+      // Update favicon dynamically if logo URL exists
+      if (logoUrl) {
+        updateFavicon(logoUrl);
+        console.log("Favicon updated:", logoUrl);
+      }
+
+      console.log("Reloading shop context");
+      await reload();
+
+      // Reload page to reflect favicon and auth metadata changes
+      console.log("Reloading page to show favicon and name changes");
+      toast.success("Settings saved!", "Page will reload in a moment…");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+
+      setShopStatus({ kind: "ok", message: "Business details saved. Page reloading…" });
       logActivity({
         actor,
         entity: "settings",
@@ -159,11 +187,31 @@ export default function SettingsPage() {
         }`,
       });
     } catch (err) {
+      console.error("Error saving shop:", err);
+      const errorMsg = err instanceof Error ? err.message : "Save failed";
+      toast.error("Save failed", errorMsg);
       setShopStatus({
         kind: "error",
-        message: err instanceof Error ? err.message : "Save failed",
+        message: errorMsg,
       });
+    } finally {
+      setSaving(false);
     }
+  }
+
+  function updateFavicon(imageUrl: string) {
+    // Update or create favicon link in document head with cache-bust parameter
+    const urlWithTimestamp = `${imageUrl}?t=${Date.now()}`;
+    let faviconLink = document.querySelector(
+      'link[rel="icon"]'
+    ) as HTMLLinkElement | null;
+    if (!faviconLink) {
+      faviconLink = document.createElement("link");
+      faviconLink.rel = "icon";
+      document.head.appendChild(faviconLink);
+    }
+    faviconLink.href = urlWithTimestamp;
+    console.log("Favicon updated to:", urlWithTimestamp);
   }
 
   const accountEmail = emailDraft ?? session?.user.email ?? "";
@@ -262,7 +310,10 @@ export default function SettingsPage() {
                         setUploading(true);
                         setShopStatus(null);
                         try {
-                          setLogoUrl(await uploadImage("shop-assets", file));
+                          const url = await uploadImage("shop-assets", file);
+                          setLogoUrl(url);
+                          // Update favicon immediately when logo is uploaded
+                          updateFavicon(url);
                         } catch (err) {
                           setShopStatus({
                             kind: "error",
@@ -384,8 +435,11 @@ export default function SettingsPage() {
               </div>
 
               <Status status={shopStatus} />
-              <button className="btn-primary w-full px-5 py-2.5 text-sm hover:btn-primary-hover sm:w-auto">
-                Save changes
+              <button
+                disabled={saving || uploading}
+                className="btn-primary w-full px-5 py-2.5 text-sm hover:btn-primary-hover sm:w-auto disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save changes"}
               </button>
             </form>
           </Section>

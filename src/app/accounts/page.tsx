@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState, ErrorBanner } from "@/components/Feedback";
-import { IconUsers } from "@/components/Icons";
+import { IconUsers, IconTrash, IconPencil } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import { useRequireRole } from "@/lib/useRequireRole";
 import {
   createAccount,
   fetchUserAccounts,
   updateAccount,
+  deleteAccount,
+  editAccount,
   type UserAccount,
 } from "@/lib/accounts";
 import type { UserRole } from "@/lib/roles";
@@ -27,6 +29,8 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetchUserAccounts().then(
@@ -65,6 +69,20 @@ export default function AccountsPage() {
       load();
     } catch (err) {
       toast.error("Update failed", err instanceof Error ? err.message : "Try again");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(account: UserAccount) {
+    setBusyId(account.user_id);
+    try {
+      await deleteAccount(account.user_id);
+      toast.success("Account deleted", `${account.email} has been removed.`);
+      setDeleteConfirmId(null);
+      load();
+    } catch (err) {
+      toast.error("Delete failed", err instanceof Error ? err.message : "Try again");
     } finally {
       setBusyId(null);
     }
@@ -135,23 +153,64 @@ export default function AccountsPage() {
                   className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
                 >
                   <p className="min-w-0 truncate font-medium">{account.email}</p>
-                  <select
-                    value={account.role}
-                    disabled={busyId === account.user_id}
-                    onChange={(event) =>
-                      handleRoleChange(account, event.target.value as UserRole)
-                    }
-                    className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none disabled:opacity-50"
-                  >
-                    <option value="staff">Staff</option>
-                    <option value="admin">Admin</option>
-                    <option value="superadmin">Superadmin</option>
-                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={account.role}
+                      disabled={busyId === account.user_id}
+                      onChange={(event) =>
+                        handleRoleChange(account, event.target.value as UserRole)
+                      }
+                      className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none disabled:opacity-50"
+                    >
+                      <option value="staff">Staff</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Superadmin</option>
+                    </select>
+                    <button
+                      onClick={() => setEditingId(account.user_id)}
+                      disabled={busyId === account.user_id}
+                      className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+                      title="Edit email/password"
+                    >
+                      <IconPencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(account.user_id)}
+                      disabled={busyId === account.user_id}
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-700 text-sm hover:bg-rose-100 disabled:opacity-50"
+                      title="Delete account"
+                    >
+                      <IconTrash size={16} />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </section>
+
+        {editingId && (
+          <EditAccountModal
+            account={accounts.find((a) => a.user_id === editingId)!}
+            isOpen={true}
+            onClose={() => setEditingId(null)}
+            onSave={load}
+            isBusy={busyId === editingId}
+          />
+        )}
+
+        {deleteConfirmId && (
+          <DeleteConfirmDialog
+            account={accounts.find((a) => a.user_id === deleteConfirmId)!}
+            isOpen={true}
+            onConfirm={() => {
+              const account = accounts.find((a) => a.user_id === deleteConfirmId)!;
+              handleDelete(account);
+            }}
+            onCancel={() => setDeleteConfirmId(null)}
+            isBusy={busyId === deleteConfirmId}
+          />
+        )}
       </main>
     </>
   );
@@ -229,5 +288,157 @@ function CreateAccountCard({ onCreated }: { onCreated: () => void }) {
         </button>
       </form>
     </section>
+  );
+}
+
+function EditAccountModal({
+  account,
+  isOpen,
+  onClose,
+  onSave,
+  isBusy,
+}: {
+  account: UserAccount;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  isBusy: boolean;
+}) {
+  const toast = useToast();
+  const [email, setEmail] = useState(account.email);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const changes: { email?: string; password?: string } = {};
+    if (email !== account.email) {
+      changes.email = email.trim();
+    }
+    if (password) {
+      changes.password = password;
+    }
+
+    if (!Object.keys(changes).length) {
+      setError("No changes to save");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await editAccount(account.user_id, changes);
+      toast.success("Account updated", `${email} has been saved.`);
+      onClose();
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update account");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="card max-w-md w-full p-5">
+        <h2 className="text-base font-semibold">Edit account</h2>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">
+              Email
+            </label>
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-foreground disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">
+              Password (leave blank to keep current)
+            </label>
+            <input
+              type="password"
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              placeholder="At least 6 characters"
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-foreground disabled:opacity-50"
+            />
+          </div>
+          {error && <p className="text-sm text-rose-700">{error}</p>}
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 rounded-lg border border-line px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 btn-primary px-3 py-2 text-sm hover:btn-primary-hover disabled:opacity-60"
+            >
+              {loading ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmDialog({
+  account,
+  isOpen,
+  onConfirm,
+  onCancel,
+  isBusy,
+}: {
+  account: UserAccount;
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isBusy: boolean;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="card max-w-md w-full p-5 border-rose-200">
+        <h2 className="text-base font-semibold text-rose-900">Delete account?</h2>
+        <p className="mt-2 text-sm text-rose-800">
+          This will permanently remove <strong>{account.email}</strong> and all access.
+          This cannot be undone.
+        </p>
+        <div className="mt-6 flex gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isBusy}
+            className="flex-1 rounded-lg border border-line px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isBusy}
+            className="flex-1 bg-rose-600 text-white rounded-lg px-3 py-2 text-sm hover:bg-rose-700 disabled:opacity-60"
+          >
+            {isBusy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

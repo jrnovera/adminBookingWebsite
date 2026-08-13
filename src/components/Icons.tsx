@@ -312,3 +312,11 @@ export function IconWallet(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconTrash(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 3h6M4 6h16M8 9v10a1.5 1.5 0 0 0 1.5 1.5h4a1.5 1.5 0 0 0 1.5-1.5V9M10 13v4M14 13v4" />
+    </Svg>
+  );
+}

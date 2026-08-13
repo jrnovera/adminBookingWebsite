@@ -33,6 +33,36 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
   if (error) throw new Error(error.message);
 }
 
+// n8n workflow that emails the client once their appointment is accepted.
+// Fire-and-forget from the admin app: a failure here should never block the
+// status update itself, so callers just log — they don't await-and-throw.
+const APPOINTMENT_VERIFIED_WEBHOOK =
+  "https://jrnovera.app.n8n.cloud/webhook/send-appointment-verified";
+
+/** Notifies the n8n workflow that an appointment was accepted, so it can
+ * email the client. Best-effort — errors are logged, never thrown, so a
+ * webhook outage can't block confirming a booking. */
+export async function notifyAppointmentVerified(booking: Booking, salonName?: string) {
+  try {
+    const res = await fetch(APPOINTMENT_VERIFIED_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientEmail: booking.email,
+        clientName: booking.full_name,
+        appointmentDate: `${booking.booking_date} ${booking.booking_time}`,
+        senderEmail: "iztilo@gmail.com",
+        senderName: salonName || "Salon Template",
+      }),
+    });
+    if (!res.ok) {
+      console.error("n8n appointment-verified webhook failed:", res.status);
+    }
+  } catch (err) {
+    console.error("n8n appointment-verified webhook error:", err);
+  }
+}
+
 /**
  * Permanently removes a booking row — used from Appointments, Transactions
  * and POS. Gated to the superadmin account in the UI (see lib/superadmin.ts);

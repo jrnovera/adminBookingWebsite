@@ -30,3 +30,25 @@ export async function updatePassword(password: string) {
   const { error } = await getSupabaseClient().auth.updateUser({ password });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Update shop name in settings AND update the auth user's display name (metadata)
+ * so the login shows the current shop name everywhere.
+ */
+export async function updateShopNameWithAuth(shopName: string) {
+  const client = getSupabaseClient();
+  const trimmedName = shopName.trim();
+
+  // Update auth user's display name (stored in user_metadata)
+  const { error: authError } = await client.auth.updateUser({
+    data: { display_name: trimmedName },
+  });
+  if (authError) throw new Error(authError.message);
+
+  // Update shop_settings
+  const { error: settingsError } = await client
+    .from("shop_settings")
+    .update({ shop_name: trimmedName, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (settingsError) throw new Error(settingsError.message);
+}
