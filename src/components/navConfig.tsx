@@ -137,5 +137,5 @@ export function isActive(pathname: string, href: string) {
 
 export function titleForPath(pathname: string) {
   const match = navItems.find((item) => isActive(pathname, item.href));
-  return match?.label ?? "Artisan";
+  return match?.label ?? "Template";
 }

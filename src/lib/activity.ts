@@ -11,7 +11,8 @@ export type ActivityEntity =
   | "service_category"
   | "settings"
   | "attendance"
-  | "payroll";
+  | "payroll"
+  | "client";
 
 export type Activity = {
   id: string;

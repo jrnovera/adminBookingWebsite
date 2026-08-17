@@ -14,6 +14,7 @@ import {
   formatDateLong,
   formatMinutes,
   formatMoney,
+  hasAppointmentStarted,
   parseTimeToMinutes,
 } from "@/lib/format";
 import { useServiceOptions } from "@/lib/services";
@@ -88,6 +89,7 @@ export default function BookingDrawer({
   // fixing a mistyped phone number doesn't require touching the service or
   // staff assignment at the same time.
   const [contactEditing, setContactEditing] = useState(false);
+  const [statusConfirm, setStatusConfirm] = useState<BookingStatus | null>(null);
 
   // Draft fields for edit mode — seeded from the booking whenever it (or
   // edit mode) changes, so switching bookings never shows stale input.
@@ -139,6 +141,10 @@ export default function BookingDrawer({
   const selectedStaff = staff.find((member) => member.id === staffId);
   const currency = settings?.currency ?? booking.currency;
   const taxRate = Number(settings?.tax_rate ?? 5) / 100;
+  const appointmentStarted = hasAppointmentStarted(
+    booking.booking_date,
+    booking.booking_time
+  );
 
   const changed =
     serviceId !== booking.service_id ||
@@ -303,6 +309,19 @@ export default function BookingDrawer({
           </span>
         </div>
 
+        {/* The team is traveling to this one — the address needs to be seen
+            at a glance, not dug out of the Contact card below. */}
+        {booking.service_location === "home" && booking.address && (
+          <div className="mx-6 mt-4 rounded-2xl border border-primary-100 bg-primary-50 px-4 py-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary-dark">
+              🚗 Home service address
+            </p>
+            <p className="mt-1 text-sm font-medium text-foreground">
+              {booking.address}
+            </p>
+          </div>
+        )}
+
         <section className="mx-6 mt-4 rounded-2xl border border-line">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -393,7 +412,11 @@ export default function BookingDrawer({
             <dl className="space-y-2 p-4 text-sm">
               <Row label="Email">{booking.email}</Row>
               <Row label="Mobile">{booking.mobile}</Row>
-              {booking.address && <Row label="Address">{booking.address}</Row>}
+              {/* Home bookings already show their address in the callout
+                  above, right under the header. */}
+              {booking.address && booking.service_location !== "home" && (
+                <Row label="Address">{booking.address}</Row>
+              )}
               {booking.notes && <Row label="Notes">{booking.notes}</Row>}
             </dl>
           )}
@@ -573,45 +596,39 @@ export default function BookingDrawer({
             Status
           </p>
           <div className="flex flex-wrap gap-2">
-            {statuses.map((status) => (
-              <button
-                key={status}
-                disabled={busy || booking.status === status || !canEdit}
-                onClick={() =>
-                  run(async () => {
-                    const previousStatus = booking.status;
-                    await updateBookingStatus(booking.id, status);
-                    logActivity({
-                      actor,
-                      entity: "booking",
-                      entity_id: booking.id,
-                      action: `status-${status}`,
-                      summary: `Marked ${booking.full_name} as ${statusLabels[
-                        status
-                      ].toLowerCase()}`,
-                      detail: `${statusLabels[booking.status]} → ${
-                        statusLabels[status]
-                      } · ${booking.service_name} · ${formatDateLong(
-                        booking.booking_date
-                      )} ${booking.booking_time}`,
-                    });
-                    // Fire-and-forget: emails the client via the n8n
-                    // workflow, only on the pending → confirmed transition.
-                    if (status === "confirmed" && previousStatus !== "confirmed") {
-                      notifyAppointmentVerified(booking, settings?.shop_name);
-                    }
-                  })
-                }
-                className={`rounded-xl px-3 py-1.5 text-xs transition disabled:opacity-50 ${
-                  booking.status === status
-                    ? "bg-foreground text-white"
-                    : "btn-ghost hover:bg-background"
-                }`}
-              >
-                {statusLabels[status]}
-              </button>
-            ))}
+            {statuses.map((status) => {
+              // Completed/no-show describe how the appointment went, so
+              // they're locked out until its start time actually arrives —
+              // pending, confirmed, and cancelled aren't time-gated.
+              const needsStarted = status === "completed" || status === "no_show";
+              const tooFuture = needsStarted && !appointmentStarted;
+              return (
+                <button
+                  key={status}
+                  disabled={busy || booking.status === status || !canEdit || tooFuture}
+                  onClick={() => setStatusConfirm(status)}
+                  title={
+                    tooFuture
+                      ? "Can't mark this until the appointment's start time arrives"
+                      : undefined
+                  }
+                  className={`rounded-xl px-3 py-1.5 text-xs transition disabled:opacity-50 ${
+                    booking.status === status
+                      ? "bg-foreground text-white"
+                      : "btn-ghost hover:bg-background"
+                  }`}
+                >
+                  {statusLabels[status]}
+                </button>
+              );
+            })}
           </div>
+          {!appointmentStarted && (
+            <p className="mt-2 text-xs text-muted">
+              Completed and No show unlock once this appointment&apos;s start
+              time arrives.
+            </p>
+          )}
         </section>
 
         <section className="border-t border-line px-6 py-4">
@@ -691,6 +708,75 @@ export default function BookingDrawer({
           </p>
         )}
       </aside>
+
+      {/* Status Confirmation Modal */}
+      {statusConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+          <div className="animate-pop-in w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl dark:bg-surface">
+            <div className="flex items-center justify-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-100">
+                <span className="text-xl">✓</span>
+              </div>
+            </div>
+
+            <h3 className="mt-4 text-center text-lg font-semibold text-foreground">
+              Change appointment status?
+            </h3>
+
+            <p className="mt-2 text-center text-sm text-muted">
+              Mark <span className="font-medium">{booking.full_name}</span>&apos;s appointment as{" "}
+              <span className="font-semibold text-foreground">
+                {statusLabels[statusConfirm].toLowerCase()}
+              </span>
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setStatusConfirm(null)}
+                disabled={busy}
+                className="btn-ghost flex-1 py-2.5 text-sm hover:bg-background disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  run(async () => {
+                    const previousStatus = booking.status;
+                    await updateBookingStatus(booking.id, statusConfirm);
+                    logActivity({
+                      actor,
+                      entity: "booking",
+                      entity_id: booking.id,
+                      action: `status-${statusConfirm}`,
+                      summary: `Marked ${booking.full_name} as ${statusLabels[
+                        statusConfirm
+                      ].toLowerCase()}`,
+                      detail: `${statusLabels[booking.status]} → ${
+                        statusLabels[statusConfirm]
+                      } · ${booking.service_name} · ${formatDateLong(
+                        booking.booking_date
+                      )} ${booking.booking_time}`,
+                    });
+                    // Fire-and-forget: emails the client via the n8n
+                    // workflow, only on the pending → confirmed transition.
+                    if (
+                      statusConfirm === "confirmed" &&
+                      previousStatus !== "confirmed"
+                    ) {
+                      notifyAppointmentVerified(booking, settings?.shop_name);
+                    }
+                    setStatusConfirm(null);
+                  });
+                }}
+                disabled={busy}
+                className="btn-primary flex-1 py-2.5 text-sm hover:btn-primary-hover disabled:opacity-60"
+              >
+                {busy ? "Updating…" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

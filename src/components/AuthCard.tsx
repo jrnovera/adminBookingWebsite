@@ -28,7 +28,7 @@ export default function AuthCard({
             ✦
           </span>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-foreground">Artisan</p>
+            <p className="text-sm font-semibold text-foreground">Template</p>
             <p className="text-[11px] tracking-widest text-primary-dark">
               SALON &amp; SPA
             </p>

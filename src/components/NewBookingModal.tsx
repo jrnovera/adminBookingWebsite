@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
-import { createBooking } from "@/lib/bookings";
+import { createBooking, deriveClients } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { formatDateLong, formatMinutes, parseTimeToMinutes } from "@/lib/format";
@@ -14,6 +14,7 @@ import { fetchStaffCategoryMap, isStaffOffOn } from "@/lib/staff";
 import { useShop } from "@/lib/shop";
 import type {
   Booking,
+  Client,
   Service,
   ServiceCategory,
   ServiceLocation,
@@ -21,13 +22,19 @@ import type {
   StaffTimeOff,
 } from "@/lib/types";
 
-const SLOT_STEP = 15;
+// Matches the public booking site's grid (booking-artisan/src/lib/staff.ts),
+// so a manually-created appointment lands on one of the same start times a
+// customer would have been offered. An admin who needs an off-grid time can
+// still double-click that exact spot on the calendar — `defaultMinutes` is
+// always kept selectable below.
+const SLOT_STEP = 30;
 
 /** Why a staff member can't take this slot — null when they can. */
 type Unavailable =
   | "Doesn't offer this"
   | "Day off"
   | "Outside shift"
+  | "During break"
   | "Already booked";
 
 export default function NewBookingModal({
@@ -70,6 +77,12 @@ export default function NewBookingModal({
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
+  // Lets "Client name" below autocomplete against people who've booked
+  // before, so the admin doesn't have to retype contact details for a
+  // returning client. There's no dedicated clients table here (unlike
+  // admin-artisan) — this app derives client info from past bookings only.
+  const knownClients = useMemo(() => deriveClients(bookings), [bookings]);
+
   const [location, setLocation] = useState<ServiceLocation>("salon");
   // Each picker holds only what the admin *chose*; the value actually used is
   // derived below and falls back to the first valid option. Deriving rather
@@ -78,7 +91,7 @@ export default function NewBookingModal({
   const [pickedCategoryId, setPickedCategoryId] = useState("");
   const [pickedServiceId, setPickedServiceId] = useState("");
   const [pickedStaffId, setPickedStaffId] = useState(defaultStaffId ?? "");
-  const [date, setDate] = useState(defaultDate);
+  const [date, setDate] = useState("");
   const [minutes, setMinutes] = useState(defaultMinutes);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -162,6 +175,17 @@ export default function NewBookingModal({
   // recompute each render — the React Compiler memoizes it for us.
   const openMinutes = settings?.open_minutes ?? 9 * 60;
   const closeMinutes = settings?.close_minutes ?? 18 * 60;
+  // The shop-wide daily break (Settings → Opening hours) makes every staff
+  // member unavailable, exactly as it does on the public booking site.
+  const breakStart = settings?.break_start_minutes ?? null;
+  const breakEnd = settings?.break_end_minutes ?? null;
+
+  /** True when a service starting here would run into the daily break. */
+  function hitsBreak(start: number): boolean {
+    if (breakStart == null || breakEnd == null) return false;
+    return start < breakEnd && start + duration > breakStart;
+  }
+
   const shopSlots: number[] = [];
   for (let m = openMinutes; m + duration <= closeMinutes; m += SLOT_STEP) {
     shopSlots.push(m);
@@ -170,7 +194,7 @@ export default function NewBookingModal({
   // shop hours — they clicked that spot deliberately.
   const slots = shopSlots.includes(defaultMinutes)
     ? shopSlots
-    : [defaultMinutes, ...shopSlots];
+    : [defaultMinutes, ...shopSlots].sort((a, b) => a - b);
 
   /** Everything that would stop this person taking the slot, in the order an
    * admin would think about it. */
@@ -183,25 +207,31 @@ export default function NewBookingModal({
         return "Doesn't offer this";
       }
     }
-    if (isStaffOffOn(member, date, timeOff)) return "Day off";
+    // The daily break closes the floor for everyone, so it rules out every
+    // staff member rather than any one of them — which also disables Save,
+    // since that is gated on somebody being available.
+    if (hitsBreak(minutes)) return "During break";
+    if (date && isStaffOffOn(member, date, timeOff)) return "Day off";
 
-    const start = minutes;
-    const end = start + duration;
-    const shiftStart = parseTimeToMinutes(member.work_start);
-    const shiftEnd = parseTimeToMinutes(member.work_end);
-    if (shiftStart !== null && start < shiftStart) return "Outside shift";
-    if (shiftEnd !== null && end > shiftEnd) return "Outside shift";
+    if (date) {
+      const start = minutes;
+      const end = start + duration;
+      const shiftStart = parseTimeToMinutes(member.work_start);
+      const shiftEnd = parseTimeToMinutes(member.work_end);
+      if (shiftStart !== null && start < shiftStart) return "Outside shift";
+      if (shiftEnd !== null && end > shiftEnd) return "Outside shift";
 
-    const clash = bookings.some((b) => {
-      if (b.staff_id !== member.id) return false;
-      if (b.booking_date !== date) return false;
-      if (b.status === "cancelled") return false;
-      const bStart = parseTimeToMinutes(b.booking_time);
-      if (bStart === null) return false;
-      const bEnd = bStart + (b.duration_minutes ?? 30);
-      return start < bEnd && end > bStart;
-    });
-    if (clash) return "Already booked";
+      const clash = bookings.some((b) => {
+        if (b.staff_id !== member.id) return false;
+        if (b.booking_date !== date) return false;
+        if (b.status === "cancelled") return false;
+        const bStart = parseTimeToMinutes(b.booking_time);
+        if (bStart === null) return false;
+        const bEnd = bStart + (b.duration_minutes ?? 30);
+        return start < bEnd && end > bStart;
+      });
+      if (clash) return "Already booked";
+    }
 
     return null;
   }
@@ -273,7 +303,10 @@ export default function NewBookingModal({
         mobile: mobile.trim(),
         address: address.trim() || null,
         notes: notes.trim() || null,
-        status: "confirmed",
+        // Manually-created bookings still need a human to accept them —
+        // same as ones coming in from the public site — rather than
+        // landing pre-confirmed just because an admin typed it in.
+        status: "pending",
         is_paid: markPaid,
         service_location: location,
       });
@@ -380,7 +413,10 @@ export default function NewBookingModal({
               onChange={(value) => setMinutes(Number(value))}
               options={slots.map((m) => ({
                 value: String(m),
-                label: formatMinutes(m),
+                label: hitsBreak(m)
+                  ? `${formatMinutes(m)} — break`
+                  : formatMinutes(m),
+                disabled: hitsBreak(m),
               }))}
             />
           </div>
@@ -420,11 +456,16 @@ export default function NewBookingModal({
             )}
           </div>
 
-          <Text
-            label="Client name"
+          <ClientPicker
+            clients={knownClients}
             value={fullName}
             onChange={setFullName}
-            required
+            onPick={(client) => {
+              setFullName(client.full_name);
+              setEmail(client.email);
+              setMobile(client.mobile);
+              if (client.address) setAddress(client.address);
+            }}
           />
           <div className="grid grid-cols-2 gap-3">
             <Text
@@ -536,6 +577,82 @@ function LocationToggle({
   );
 }
 
+/** "Client name" field that autocompletes against people who've booked
+ *  before — picking a match fills in their email, mobile and address below.
+ *  Typing a name with no match just behaves like a plain text field, for a
+ *  new client. */
+function ClientPicker({
+  clients,
+  value,
+  onChange,
+  onPick,
+}: {
+  clients: Client[];
+  value: string;
+  onChange: (value: string) => void;
+  onPick: (client: Client) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = value.trim().toLowerCase();
+  const matches =
+    query.length < 2
+      ? []
+      : clients
+          .filter(
+            (c) =>
+              c.full_name.toLowerCase().includes(query) ||
+              c.email.toLowerCase().includes(query) ||
+              c.mobile.includes(query)
+          )
+          .slice(0, 6);
+
+  return (
+    <label className="relative block">
+      <span className="mb-1 block text-xs uppercase tracking-wide text-muted">
+        Client name
+      </span>
+      <input
+        type="text"
+        value={value}
+        required
+        placeholder="Search existing clients or type a new name"
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        // Delayed so a click on a dropdown option below still registers
+        // before the list disappears.
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-foreground"
+      />
+      {open && matches.length > 0 && (
+        <ul className="absolute z-40 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-line bg-surface py-1 shadow-[var(--shadow-lg)]">
+          {matches.map((client) => (
+            <li key={client.email}>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onPick(client);
+                  setOpen(false);
+                }}
+                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition hover:bg-background"
+              >
+                <span className="font-medium">{client.full_name}</span>
+                <span className="text-xs text-muted">
+                  {client.email}
+                  {client.mobile ? ` · ${client.mobile}` : ""}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </label>
+  );
+}
+
 function Text({
   label,
   value,
@@ -574,7 +691,7 @@ function Select({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
 }) {
   return (
     <label className="block">
@@ -587,7 +704,11 @@ function Select({
         className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-foreground"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+          >
             {option.label}
           </option>
         ))}

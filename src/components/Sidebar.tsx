@@ -70,13 +70,13 @@ export default function Sidebar() {
           />
         ) : (
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-light to-primary text-base font-semibold text-white shadow-lg shadow-black/30">
-            {(settings?.shop_name ?? "Artisan").slice(0, 1).toUpperCase()}
+            {(settings?.shop_name ?? "Template").slice(0, 1).toUpperCase()}
           </span>
         )}
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-sm font-semibold text-white">
-              {settings?.shop_name ?? "Artisan"}
+              {settings?.shop_name ?? "Template"}
             </p>
             <p className="truncate text-[10px] uppercase tracking-[0.18em] text-rail-text">
               Salon &amp; Spa

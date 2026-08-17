@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import PageHeader from "@/components/PageHeader";
 import Avatar from "@/components/Avatar";
 import StatusBadge from "@/components/StatusBadge";
 import WeekTimeGrid from "@/components/WeekTimeGrid";
@@ -29,11 +28,13 @@ import { useVisibleDayCount } from "@/lib/useMediaQuery";
 import { useToast } from "@/components/Toast";
 import {
   IconBan,
+  IconCalendar,
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconCollapse,
   IconExpand,
+  IconInfo,
   IconPlus,
 } from "@/components/Icons";
 import type { Booking, Staff, StaffBlock, StaffTimeOff } from "@/lib/types";
@@ -64,6 +65,10 @@ export default function CalendarPage() {
   // and page padding all disappear behind it — for when the admin wants
   // the maximum room to see a busy day at a glance.
   const [fullscreen, setFullscreen] = useState(false);
+  const [hideHeader, setHideHeader] = useState(false);
+  const [showHelpTip, setShowHelpTip] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const helpRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -78,6 +83,46 @@ export default function CalendarPage() {
       document.body.style.overflow = previousOverflow;
     };
   }, [fullscreen]);
+
+  useEffect(() => {
+    const mainElement = mainRef.current;
+    if (!mainElement) return;
+
+    let prevScrollY = 0;
+    const handleScroll = () => {
+      const scrollY = mainElement.scrollTop;
+      // Hide when scrolling down (scrollY > prevScrollY)
+      setHideHeader(scrollY > prevScrollY && scrollY > 50);
+      prevScrollY = scrollY;
+    };
+
+    mainElement.addEventListener("scroll", handleScroll);
+    return () => mainElement.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Close help tooltip on escape or click outside
+  useEffect(() => {
+    if (!showHelpTip) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (helpRef.current && !helpRef.current.contains(event.target as Node)) {
+        setShowHelpTip(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowHelpTip(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showHelpTip]);
 
   const [moveError, setMoveError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Booking | null>(null);
@@ -209,9 +254,14 @@ export default function CalendarPage() {
       ends.push(settings.close_minutes);
     }
 
+    // Always run the grid through to midnight, even if every staff member's
+    // shift and the shop's posted hours end earlier — late walk-ins and
+    // manually-added evening bookings still need somewhere to land.
+    const computedEnd = ends.length ? Math.max(...ends) : 18 * 60;
+
     return {
       dayStart: starts.length ? Math.min(...starts) : 9 * 60,
-      dayEnd: ends.length ? Math.max(...ends) : 18 * 60,
+      dayEnd: Math.max(computedEnd, 24 * 60),
     };
   }, [currentStaff, activeStaff, settings]);
 
@@ -373,35 +423,6 @@ export default function CalendarPage() {
     [canEdit, toast]
   );
 
-  const rangeLabel = useMemo(() => {
-    if (view === "day") {
-      return cursor.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      });
-    }
-    const first = weekDays[0];
-    const last = weekDays[weekDays.length - 1];
-    if (weekDays.length === 1) {
-      return first.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      });
-    }
-    return `${first.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    })} – ${last.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })}`;
-  }, [weekDays, view, cursor]);
-
   // Day view steps a day at a time; week view by the span on screen.
   const step = view === "day" ? 1 : dayCount;
 
@@ -426,138 +447,57 @@ export default function CalendarPage() {
             "flex min-h-0 flex-1 flex-col overflow-hidden"
       }
     >
-      <PageHeader
-        title="Calendar"
-        subtitle={rangeLabel}
-        action={
-          <div className="flex items-center gap-2">
-            {/* Primary action leads on mobile so it's reachable without
-                scrolling the toolbar; falls back to trailing on larger
-                screens where everything already fits. */}
+      <div className={`border-b border-line bg-surface px-2 py-2 transition-all duration-300 sm:px-3 ${hideHeader ? "-translate-y-full" : ""}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Primary action leads on mobile so it's reachable without
+              scrolling the toolbar; falls back to trailing on larger
+              screens where everything already fits. */}
+          <button
+            onClick={() =>
+              setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
+            }
+            disabled={!canEdit}
+            title={!canEdit ? "Only admins can create appointments" : "New appointment"}
+            aria-label="New appointment"
+            className="btn-primary order-first grid h-9 w-9 shrink-0 place-items-center rounded-xl hover:btn-primary-hover disabled:opacity-60 sm:order-none"
+          >
+            <IconPlus size={16} />
+          </button>
+
+          {/* Segmented prev / today / next, stepping by the visible span */}
+          <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
             <button
-              onClick={() =>
-                setCreating({ dateKey: toDateKey(cursor), minutes: dayStart })
-              }
-              disabled={!canEdit}
-              title={!canEdit ? "Only admins can create appointments" : undefined}
-              className="btn-primary order-first flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm hover:btn-primary-hover disabled:opacity-60 sm:order-none"
+              onClick={() => setCursor((date) => addDays(date, -step))}
+              aria-label="Previous"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
             >
-              <IconPlus size={15} />
-              <span className="whitespace-nowrap">
-                New<span className="hidden sm:inline"> Appointment</span>
-              </span>
+              <IconChevronLeft size={16} />
             </button>
-
-            {/* Segmented today / prev / next, stepping by the visible span */}
-            <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
-              <button
-                onClick={() => setCursor((date) => addDays(date, -step))}
-                aria-label="Previous"
-                className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
-              >
-                <IconChevronLeft size={16} />
-              </button>
-              <button
-                onClick={() => setCursor(new Date())}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium transition hover:bg-background"
-              >
-                Today
-              </button>
-              <button
-                onClick={() => setCursor((date) => addDays(date, step))}
-                aria-label="Next"
-                className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
-              >
-                <IconChevronRight size={16} />
-              </button>
-            </div>
-
-            {/* Day = staff columns (Fresha style) · Week = day columns */}
-            <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
-              {(["day", "week"] as const).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setView(option)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition ${
-                    view === option
-                      ? "bg-foreground text-white shadow-sm"
-                      : "text-muted hover:bg-background hover:text-foreground"
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-
-            <input
-              type="date"
-              aria-label="Jump to date"
-              value={toDateKey(cursor)}
-              onChange={(event) => {
-                if (!event.target.value) return;
-                const [year, month, day] = event.target.value
-                  .split("-")
-                  .map(Number);
-                setCursor(new Date(year, month - 1, day));
-              }}
-              className="btn-ghost shrink-0 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background"
-            />
-
             <button
-              onClick={() =>
-                setBlocking({ dateKey: toDateKey(cursor), minutes: dayStart })
-              }
-              disabled={!canEdit}
-              title={!canEdit ? "Only admins can block time" : undefined}
-              className="btn-ghost flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background disabled:opacity-60"
+              onClick={() => setCursor(new Date())}
+              aria-label="Jump to today"
+              title="Today"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
             >
-              <IconBan size={15} />
-              <span className="hidden sm:inline">Block time</span>
+              <IconCalendar size={16} />
             </button>
-
             <button
-              onClick={() => setFullscreen((value) => !value)}
-              title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
-              aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-              className="btn-ghost grid shrink-0 place-items-center px-2.5 py-2 shadow-[var(--shadow-xs)] hover:bg-background"
+              onClick={() => setCursor((date) => addDays(date, step))}
+              aria-label="Next"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
             >
-              {fullscreen ? (
-                <IconCollapse size={15} />
-              ) : (
-                <IconExpand size={15} />
-              )}
+              <IconChevronRight size={16} />
             </button>
           </div>
-        }
-      />
 
-      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
-        {error && (
-          <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </p>
-        )}
-        {moveError && (
-          <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {moveError}
-          </p>
-        )}
-
-        {/* Staff picker: all bookings, or one member's week */}
-        <div className="flex flex-wrap items-center gap-3">
-          <StaffDropdown
-            staff={activeStaff}
-            value={selectedStaff}
-            onChange={setSelectedStaff}
-          />
           {/* Home visits need travel time between them, so seeing them on
               their own is how you spot an impossible run of appointments. */}
-          <div className="flex gap-1.5">
+          <div className="flex shrink-0 gap-1.5">
             {(["all", "salon", "home"] as const).map((option) => (
               <button
                 key={option}
                 onClick={() => setLocationFilter(option)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150 ${
                   locationFilter === option
                     ? "bg-foreground text-white shadow-sm"
                     : "border border-line text-foreground/70 hover:bg-background"
@@ -571,7 +511,111 @@ export default function CalendarPage() {
               </button>
             ))}
           </div>
+
+          <input
+            type="date"
+            aria-label="Jump to date"
+            value={toDateKey(cursor)}
+            onChange={(event) => {
+              if (!event.target.value) return;
+              const [year, month, day] = event.target.value
+                .split("-")
+                .map(Number);
+              setCursor(new Date(year, month - 1, day));
+            }}
+            className="btn-ghost shrink-0 px-3 py-2 text-sm shadow-[var(--shadow-xs)] hover:bg-background"
+          />
+
+          {/* Day = staff columns (Fresha style) · Week = day columns */}
+          <div className="flex shrink-0 items-center rounded-xl border border-line bg-surface p-0.5 shadow-[var(--shadow-xs)]">
+            {(["day", "week"] as const).map((option) => (
+              <button
+                key={option}
+                onClick={() => setView(option)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition ${
+                  view === option
+                    ? "bg-foreground text-white shadow-sm"
+                    : "text-muted hover:bg-background hover:text-foreground"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() =>
+              setBlocking({ dateKey: toDateKey(cursor), minutes: dayStart })
+            }
+            disabled={!canEdit}
+            title={!canEdit ? "Only admins can block time" : "Block time"}
+            aria-label="Block time"
+            className="btn-ghost grid h-9 w-9 shrink-0 place-items-center rounded-xl shadow-[var(--shadow-xs)] hover:bg-background disabled:opacity-60"
+          >
+            <IconBan size={15} />
+          </button>
+
+          <button
+            onClick={() => setFullscreen((value) => !value)}
+            title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+            aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+            className="btn-ghost grid h-9 w-9 shrink-0 place-items-center rounded-xl shadow-[var(--shadow-xs)] hover:bg-background"
+          >
+            {fullscreen ? (
+              <IconCollapse size={15} />
+            ) : (
+              <IconExpand size={15} />
+            )}
+          </button>
+
+          {/* Help tip button */}
+          <div ref={helpRef} className="relative">
+            <button
+              onClick={() => setShowHelpTip((prev) => !prev)}
+              title="View tips"
+              aria-label="View tips"
+              className="btn-ghost grid h-9 w-9 shrink-0 place-items-center rounded-xl shadow-[var(--shadow-xs)] hover:bg-background text-muted"
+            >
+              <IconInfo size={15} />
+            </button>
+            {showHelpTip && (
+              <div className="absolute left-0 top-full mt-2 w-72 rounded-xl border border-line bg-surface p-3 text-xs text-muted shadow-[var(--shadow-lg)] z-40">
+                <p className="font-medium text-foreground mb-1.5">Tips:</p>
+                <p>
+                  {view === "day"
+                    ? "• Drag an appointment to another time or team member to reassign it"
+                    : "• Drag an appointment to another day or time to reschedule"}
+                </p>
+                <p className="mt-1">
+                  {view === "day"
+                    ? "• Double-click an empty slot to book"
+                    : "• Switch to Day view to add a booking"}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Compact staff picker trails the toolbar — narrower than the
+              rest so it doesn't compete with the date/view controls. */}
+          <StaffDropdown
+            staff={activeStaff}
+            value={selectedStaff}
+            onChange={setSelectedStaff}
+          />
         </div>
+      </div>
+
+      <main ref={mainRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:p-3">
+        {error && (
+          <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
+        {moveError && (
+          <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {moveError}
+          </p>
+        )}
 
         {loading && <p className="text-sm text-muted">Loading…</p>}
 
@@ -581,16 +625,6 @@ export default function CalendarPage() {
             calendar per person.
           </p>
         )}
-
-        {/* Drag-and-drop only exists on pointer devices, so the hint is too. */}
-        <p className="hidden items-center gap-2 text-xs text-muted sm:flex">
-          <span className="rounded-md bg-foreground/[0.06] px-1.5 py-0.5 font-medium">
-            Tip
-          </span>
-          {view === "day"
-            ? "Drag an appointment to another time or team member to reassign it · Double-click an empty slot to book."
-            : "Drag an appointment to another day or time to reschedule · Switch to Day view to add a booking."}
-        </p>
 
         {view === "day" ? (
           <StaffDayGrid
@@ -940,33 +974,26 @@ function StaffDropdown({
   const current = staff.find((member) => member.id === value) ?? null;
 
   return (
-    <div ref={rootRef} className="relative w-full max-w-xs">
+    <div ref={rootRef} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="btn-ghost flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-sm hover:bg-background"
+        className="btn-ghost flex max-w-[9rem] shrink-0 items-center gap-1.5 rounded-xl px-2 py-1.5 text-xs shadow-[var(--shadow-xs)] hover:bg-background sm:max-w-[10rem]"
       >
         {current ? (
-          <Avatar name={current.name} src={current.avatar_url} size={32} />
+          <Avatar name={current.name} src={current.avatar_url} size={20} />
         ) : (
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-foreground/10 text-xs">
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-foreground/10 text-[10px]">
             All
           </span>
         )}
-        <span className="min-w-0 flex-1 text-left leading-tight">
-          <span className="block truncate">
-            {current ? current.name : "All staff"}
-          </span>
-          {current && (
-            <span className="block truncate text-[11px] text-muted">
-              {current.role}
-            </span>
-          )}
+        <span className="min-w-0 flex-1 truncate text-left">
+          {current ? current.name : "All staff"}
         </span>
         <IconChevronDown
-          size={16}
+          size={13}
           className={`shrink-0 text-muted transition-transform duration-200 ${
             open ? "rotate-180" : ""
           }`}
@@ -976,7 +1003,7 @@ function StaffDropdown({
       {open && (
         <ul
           role="listbox"
-          className="absolute z-40 mt-1 max-h-80 w-full overflow-y-auto overflow-x-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
+          className="absolute z-40 mt-1 max-h-80 w-56 overflow-y-auto overflow-x-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
         >
           <li>
             <button

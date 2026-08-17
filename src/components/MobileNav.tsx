@@ -84,12 +84,12 @@ export default function MobileNav({
             />
           ) : (
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-light to-primary text-base font-semibold text-white">
-              {(settings?.shop_name ?? "Artisan").slice(0, 1).toUpperCase()}
+              {(settings?.shop_name ?? "Template").slice(0, 1).toUpperCase()}
             </span>
           )}
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-sm font-semibold text-white">
-              {settings?.shop_name ?? "Artisan"}
+              {settings?.shop_name ?? "Template"}
             </p>
             <p className="text-[10px] uppercase tracking-[0.18em] text-rail-text">
               Salon &amp; Spa

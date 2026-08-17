@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Avatar from "./Avatar";
+import { IconCheck } from "./Icons";
 import { formatMinutes, parseTimeToMinutes, toDateKey } from "@/lib/format";
 import { isStaffOffOn } from "@/lib/staff";
 import { useMediaQuery } from "@/lib/useMediaQuery";
@@ -9,16 +10,18 @@ import type { Booking, Staff, StaffBlock, StaffTimeOff } from "@/lib/types";
 
 const SLOT_MINUTES = 15;
 const SNAP_MINUTES = 15;
-// A fixed, comfortably-readable row height rather than one shrunk to force
-// the whole day into the viewport without scrolling — that made every
-// appointment under ~45 minutes render too thin to read its own name. A
-// busy 12-hour day now scrolls vertically (the staff header stays pinned),
-// same as Google Calendar or Fresha; every card stays legible regardless of
-// how long the day is. Slightly taller on tablet/desktop, where there's
-// room to spare, than on a phone.
-const SLOT_HEIGHT_DESKTOP = 22;
-const SLOT_HEIGHT_MOBILE = 18;
-const AXIS_WIDTH = 64;
+// Compact row height so a busy afternoon (e.g. 7pm–10pm) fits the viewport
+// without vertical scrolling, while a full 12-hour day still scrolls past
+// that point — the staff header stays pinned while it does. Booking cards
+// are trimmed down to just time + name (see the button below) so they stay
+// legible even at this shorter row height.
+const SLOT_HEIGHT_DESKTOP = 26;
+const SLOT_HEIGHT_MOBILE = 14;
+// Cards scale with the appointment's actual duration, but never render
+// shorter than this — a 15-minute booking still shows its time and name
+// on two clean lines instead of being squeezed illegible.
+const MIN_CARD_HEIGHT = 30;
+const AXIS_WIDTH = 56;
 
 /**
  * Fresha-style pastel fills — a solid tint per service rather than a bar with
@@ -97,6 +100,16 @@ export default function StaffDayGrid({
     return marks;
   }, [dayStart, dayEnd]);
 
+  // Every 15-minute row gets its own faint line — an empty column then reads
+  // as a plain ruled grid, like a spreadsheet, rather than blank whitespace.
+  const cellMarks = useMemo(() => {
+    const marks: number[] = [];
+    for (let minutes = dayStart; minutes <= dayEnd; minutes += SLOT_MINUTES) {
+      marks.push(minutes);
+    }
+    return marks;
+  }, [dayStart, dayEnd]);
+
   const byStaff = useMemo(() => {
     const map = new Map<string, Booking[]>();
     for (const booking of bookings) {
@@ -136,17 +149,13 @@ export default function StaffDayGrid({
     );
   }
 
-  // Few people: fill the available width. Many: fixed width and scroll.
-  // Either way a column never shrinks below a legible size — on a phone
-  // that means even 3-4 staff correctly falls back to horizontal scroll
-  // instead of squeezing avatars and names into unreadable slivers.
-  const wide = staff.length <= 5;
-  // Wider minimum on tablet so a longer role title ("Massage Therapist
-  // Expert & Beautician") has room to wrap onto a second line instead of
-  // colliding with the next column's text.
-  const columnClass = wide
-    ? "min-w-[7rem] sm:min-w-[9rem] flex-1"
-    : "w-[11rem] shrink-0";
+  // Columns grow to fill the available width (so 10 or fewer staff always
+  // fill the screen edge-to-edge with no dead space) but never shrink past
+  // a legible minimum — once more than ~10 columns would need to fit, that
+  // minimum kicks in and the grid scrolls right instead of squeezing further.
+  const columnClass = "min-w-[92px] max-w-[160px] flex-1";
+  // Center single staff column for better use of space
+  const isSingleStaff = staff.length === 1;
 
   return (
     <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -156,7 +165,11 @@ export default function StaffDayGrid({
           down to illegibility. The staff header stays pinned while it
           scrolls, in both directions. */}
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className={wide ? "" : "min-w-max"}>
+        {/* No min-w-max here — the row fills the available width (letting
+            flex-1 columns grow to use it) when there's room, and only
+            overflows into horizontal scroll once the columns' own minimum
+            widths need more space than that. */}
+        <div>
           {/* Staff header: avatar over name, like Fresha */}
           <div className="sticky top-0 z-20 flex border-b border-line bg-surface">
             {/* Pinned left so the corner stays opaque while columns scroll. */}
@@ -170,24 +183,27 @@ export default function StaffDayGrid({
               return (
                 <div
                   key={member.id}
-                  className={`${columnClass} flex flex-col items-center gap-1.5 px-2 py-3`}
+                  className={`${columnClass} flex flex-col items-center gap-1 px-1.5 py-2`}
                 >
-                  <Avatar name={member.name} src={member.avatar_url} size={38} />
+                  <Avatar name={member.name} src={member.avatar_url} size={28} />
                   <div className="min-w-0 w-full text-center leading-tight">
-                    <p className="truncate text-[13px] font-medium">
+                    <p className="truncate text-[12px] font-medium">
                       {member.name}
                     </p>
-                    {/* Role wraps onto a second line instead of truncating —
-                        a long title like "Massage Therapist Expert &
-                        Beautician" otherwise reads as clipped garbage on a
-                        tablet-width column, or bleeds into the next one. */}
-                    <p className="line-clamp-2 break-words text-[11px] text-muted">
+                    {/* Single line only — narrower columns don't have room
+                        for a second, and the full role is still a title
+                        attribute away via the avatar/name above. */}
+                    <p className="truncate text-[10px] text-muted">
                       {off ? "Day off" : member.role}
                     </p>
                   </div>
                 </div>
               );
             })}
+            {/* Blank filler so the ruled grid below still extends the full
+                width even past the last staff member, instead of leaving
+                bare whitespace to the right on a wide screen. */}
+            <div className="min-w-0 flex-1" aria-hidden="true" />
           </div>
 
           {/* Time axis + one column per staff member */}
@@ -230,13 +246,14 @@ export default function StaffDayGrid({
                 ...(blocksByStaff.get("__all") ?? []),
               ];
               const off = isStaffOffOn(member, dateKey, timeOff);
-              const workStart = parseTimeToMinutes(member.work_start);
-              const workEnd = parseTimeToMinutes(member.work_end);
 
               return (
                 <div
                   key={member.id}
                   onDragOver={(event) => {
+                    // A staff member who's off can't take a dropped
+                    // appointment either — no hint, no drop.
+                    if (off) return;
                     event.preventDefault();
                     setHint({
                       staffId: member.id,
@@ -249,6 +266,10 @@ export default function StaffDayGrid({
                   onDragLeave={() => setHint(null)}
                   onDrop={(event) => {
                     event.preventDefault();
+                    if (off) {
+                      setDragging(null);
+                      return;
+                    }
                     const minutes = minutesFromPointer(
                       event.clientY,
                       event.currentTarget
@@ -259,26 +280,39 @@ export default function StaffDayGrid({
                     }
                     setDragging(null);
                   }}
-                  onDoubleClick={(event) =>
+                  onDoubleClick={(event) => {
+                    // Can't book someone in who isn't working that day.
+                    if (off) return;
                     onCreate(
                       dateKey,
                       minutesFromPointer(event.clientY, event.currentTarget),
                       member.id
-                    )
+                    );
+                  }}
+                  title={
+                    off
+                      ? `${member.name} is off — pick another staff member to book`
+                      : "Double-click an empty slot to add a booking"
                   }
-                  title="Double-click an empty slot to add a booking"
                   className={`relative border-l border-line ${columnClass} ${
-                    off ? "bg-foreground/[0.035]" : ""
+                    off ? "cursor-not-allowed bg-foreground/[0.035]" : ""
                   }`}
                   style={{ height: gridHeight }}
                 >
-                  {/* Hour and half-hour lines — the half-hour line is fainter
-                      so the grid still reads as hour-by-hour at a glance. */}
-                  {hourMarks.map((minutes) => (
+                  {/* Every 15-minute cell gets a ruled line — an empty
+                      column then reads as a plain spreadsheet grid rather
+                      than blank whitespace. Hour lines are darkest,
+                      half-hour lines medium, and the quarter lines in
+                      between are faintest. */}
+                  {cellMarks.map((minutes) => (
                     <div
                       key={minutes}
                       className={`pointer-events-none absolute inset-x-0 border-t ${
-                        minutes % 60 === 0 ? "border-line" : "border-line/50"
+                        minutes % 60 === 0
+                          ? "border-line"
+                          : minutes % 30 === 0
+                          ? "border-line/50"
+                          : "border-line/20"
                       }`}
                       style={{
                         top:
@@ -286,27 +320,6 @@ export default function StaffDayGrid({
                       }}
                     />
                   ))}
-
-                  {/* Outside this person's shift */}
-                  {!off && workStart !== null && workStart > dayStart && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 bg-foreground/[0.045]"
-                      style={{
-                        height:
-                          ((workStart - dayStart) / SLOT_MINUTES) * slotHeight,
-                      }}
-                    />
-                  )}
-                  {!off && workEnd !== null && workEnd < dayEnd && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 bg-foreground/[0.045]"
-                      style={{
-                        top: ((workEnd - dayStart) / SLOT_MINUTES) * slotHeight,
-                        height:
-                          ((dayEnd - workEnd) / SLOT_MINUTES) * slotHeight,
-                      }}
-                    />
-                  )}
 
                   {hint?.staffId === member.id && (
                     <div
@@ -361,7 +374,11 @@ export default function StaffDayGrid({
                       ((start - dayStart) / SLOT_MINUTES) * slotHeight;
                     const height =
                       (booking.duration_minutes / SLOT_MINUTES) * slotHeight;
-                    const roomy = height >= slotHeight * 2.5;
+                    const cardHeight = Math.max(height, MIN_CARD_HEIGHT);
+                    // Extra detail only shows up once the card is tall
+                    // enough to hold it without crowding the time + name.
+                    const roomy = cardHeight >= MIN_CARD_HEIGHT * 1.8;
+                    const verRoomy = cardHeight >= MIN_CARD_HEIGHT * 3;
 
                     return (
                       <button
@@ -373,48 +390,93 @@ export default function StaffDayGrid({
                           setHint(null);
                         }}
                         onClick={() => onSelect(booking)}
-                        title={`${booking.full_name} — ${booking.service_name}`}
-                        className={`absolute inset-x-1 cursor-grab overflow-hidden rounded-md px-1.5 py-1 text-left leading-tight ring-1 ring-inset transition-all duration-200 hover:z-[15] hover:shadow-md active:cursor-grabbing ${serviceColor(
+                        title={`${booking.full_name} — ${booking.service_name}${booking.mobile ? ` · ${booking.mobile}` : ""}${
+                          booking.service_location === "home" && booking.address
+                            ? ` · 🚗 ${booking.address}`
+                            : ""
+                        }`}
+                        className={`absolute inset-x-1 z-[5] cursor-grab overflow-hidden rounded-md px-1.5 py-0.5 text-left leading-tight ring-1 ring-inset transition-all duration-200 hover:z-[20] hover:shadow-lg active:cursor-grabbing ${serviceColor(
                           booking.service_id
                         )} ${
                           booking.status === "cancelled"
                             ? "opacity-50 line-through"
                             : ""
                         } ${
+                          booking.status === "completed"
+                            ? "opacity-60"
+                            : ""
+                        } ${
                           booking.status === "pending"
                             ? "ring-2 ring-amber-400"
                             : ""
                         } ${dragging?.id === booking.id ? "opacity-40" : ""}`}
-                        style={{ top, height: Math.max(height, slotHeight) }}
+                        style={{ top, height: cardHeight }}
                       >
-                        <p className="flex items-center gap-1 text-[10px] font-medium tabular-nums opacity-70">
-                          {formatMinutes(start)} – {formatMinutes(end)}
-                          {booking.status === "pending" && (
-                            <span className="rounded-full bg-amber-400 px-1 text-[9px] font-bold text-amber-950">
-                              NEW
-                            </span>
-                          )}
-                          {booking.is_paid && (
-                            <span
-                              title="Paid"
-                              className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                        <p className="truncate text-[10px] font-medium tabular-nums opacity-70">
+                          {formatMinutes(start)}–{formatMinutes(end)}
+                          {booking.status === "completed" && (
+                            <IconCheck
+                              size={10}
+                              className="ml-1 inline-block shrink-0 text-emerald-600 align-text-top"
                             />
                           )}
                         </p>
-                        <p className="truncate text-[12px] font-semibold">
+                        <p className="truncate text-xs font-bold">
+                          {booking.service_location === "home" && (
+                            <span title="Home service">🚗 </span>
+                          )}
                           {booking.full_name}
                         </p>
+                        {/* Longer bookings earn a little more detail —
+                            everything else stays in the title tooltip. */}
                         {roomy && (
                           <p className="truncate text-[11px] opacity-75">
                             {booking.service_name}
                           </p>
                         )}
+                        {verRoomy &&
+                          (booking.service_location === "home" && booking.address
+                            ? (
+                              <p className="truncate text-[10px] opacity-60">
+                                {booking.address}
+                              </p>
+                            )
+                            : booking.mobile && (
+                              <p className="truncate text-[10px] opacity-60">
+                                {booking.mobile}
+                              </p>
+                            ))}
                       </button>
                     );
                   })}
                 </div>
               );
             })}
+
+            {/* Same blank filler as the header, ruled with the same grid so
+                the empty stretch past the last staff member still reads as
+                part of the sheet rather than dead whitespace. */}
+            <div
+              className="relative min-w-0 flex-1 border-l border-line"
+              style={{ height: gridHeight }}
+              aria-hidden="true"
+            >
+              {cellMarks.map((minutes) => (
+                <div
+                  key={minutes}
+                  className={`pointer-events-none absolute inset-x-0 border-t ${
+                    minutes % 60 === 0
+                      ? "border-line"
+                      : minutes % 30 === 0
+                      ? "border-line/50"
+                      : "border-line/20"
+                  }`}
+                  style={{
+                    top: ((minutes - dayStart) / SLOT_MINUTES) * slotHeight,
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>

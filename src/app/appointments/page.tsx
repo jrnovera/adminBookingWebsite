@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import ClickableStatusBadge from "@/components/ClickableStatusBadge";
 import HomeBadge from "@/components/HomeBadge";
+import PeriodFilter from "@/components/PeriodFilter";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconClock } from "@/components/Icons";
 import ExportBar from "@/components/ExportBar";
@@ -18,7 +18,8 @@ import {
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
-import { formatDateLong, formatMoney } from "@/lib/format";
+import { formatDateLong, formatMoney, hasAppointmentStarted } from "@/lib/format";
+import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { exportBookingsCsv } from "@/lib/exportCsv";
 import { useBookings } from "@/lib/useBookings";
 import type { Booking, BookingStatus, ServiceLocation } from "@/lib/types";
@@ -73,30 +74,109 @@ export default function AppointmentsPage() {
   const [locationFilter, setLocationFilter] = useState<ServiceLocation | "all">(
     "all"
   );
+  // Date filtering: either a period preset (Upcoming, This week, …) or a
+  // specific day picked below — the two aren't meant to combine, same
+  // pattern as the POS page's date filter.
+  const [period, setPeriod] = useState<PeriodKey>("all");
+  const [exactDate, setExactDate] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const visible = useMemo(
-    () =>
-      bookings
+    () => {
+      const statusPriority: Record<BookingStatus, number> = {
+        pending: 1,
+        confirmed: 2,
+        completed: 3,
+        cancelled: 4,
+        no_show: 5,
+      };
+
+      const today = new Date().toISOString().split('T')[0];
+      const bounds = exactDate
+        ? { start: exactDate, end: exactDate }
+        : resolvePeriod(period);
+
+      return bookings
         .filter((booking) => {
           if (activeFilter !== "all" && booking.status !== activeFilter) {
             return false;
           }
+          if (!withinPeriod(booking.booking_date, bounds)) return false;
           if (locationFilter === "all") return true;
           // Bookings made before home service existed have no value stored,
           // and those were all in-salon.
           return (booking.service_location ?? "salon") === locationFilter;
         })
-        // Most recently created first — this is a queue of what clients just
-        // booked, not a schedule (Calendar already covers that view sorted
-        // by appointment time).
-        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
-    [bookings, activeFilter, locationFilter]
+        // Sort by: 1) not completed first, 2) upcoming bookings, 3) time
+        .sort((a, b) => {
+          const statusDiff = statusPriority[a.status] - statusPriority[b.status];
+          if (statusDiff !== 0) return statusDiff;
+
+          // For same status, prioritize by booking date/time
+          // Upcoming bookings (today or later) come first
+          const aIsUpcoming = a.booking_date >= today;
+          const bIsUpcoming = b.booking_date >= today;
+          if (aIsUpcoming && !bIsUpcoming) return -1;
+          if (!aIsUpcoming && bIsUpcoming) return 1;
+
+          // Same status and both upcoming/past, sort by date then time
+          const dateCompare = a.booking_date.localeCompare(b.booking_date);
+          if (dateCompare !== 0) return dateCompare;
+          return a.booking_time.localeCompare(b.booking_time);
+        });
+    },
+    [bookings, activeFilter, locationFilter, period, exactDate]
   );
+
+  const totalPages = Math.ceil(visible.length / itemsPerPage);
+  const paginatedBookings = useMemo(
+    () => {
+      const start = (currentPage - 1) * itemsPerPage;
+      return visible.slice(start, start + itemsPerPage);
+    },
+    [visible, currentPage]
+  );
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (newFilter: BookingStatus | "all" | null) => {
+    setFilter(newFilter);
+    setCurrentPage(1);
+  };
+
+  const handleLocationFilterChange = (newLocation: ServiceLocation | "all") => {
+    setLocationFilter(newLocation);
+    setCurrentPage(1);
+  };
+
+  const handlePeriodChange = (newPeriod: PeriodKey) => {
+    setExactDate("");
+    setPeriod(newPeriod);
+    setCurrentPage(1);
+  };
+
+  const handleExactDateChange = (value: string) => {
+    setExactDate(value);
+    setCurrentPage(1);
+  };
 
   const homeCount = useMemo(
     () => bookings.filter((b) => b.service_location === "home").length,
     [bookings]
   );
+
+  // "Completed" describes how the appointment went, so it's locked out
+  // until its start time actually arrives — the other statuses aren't
+  // time-gated. no_show isn't reachable from ClickableStatusBadge's menu
+  // at all, so it doesn't need an entry here.
+  function statusRestrictions(booking: Booking) {
+    return hasAppointmentStarted(booking.booking_date, booking.booking_time)
+      ? undefined
+      : {
+          completed:
+            "Can't mark this until the appointment's start time arrives",
+        };
+  }
 
   async function changeStatus(booking: Booking, status: BookingStatus) {
     setSaving(true);
@@ -104,7 +184,12 @@ export default function AppointmentsPage() {
     try {
       await updateBookingStatus(booking.id, status);
       await reload();
-      setSelected({ ...booking, status });
+      // Only refresh the details panel if it was already open for this
+      // booking — changing status from the row/list dropdown shouldn't pop
+      // details open on its own. The toast below is the confirmation.
+      setSelected((current) =>
+        current?.id === booking.id ? { ...booking, status } : current
+      );
       toast.success(
         "Status updated",
         `${booking.full_name} is now ${filterLabels[status].toLowerCase()}.`
@@ -162,53 +247,74 @@ export default function AppointmentsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Appointments"
-        subtitle={`${visible.length} of ${bookings.length} bookings`}
-        action={
-          <div className="flex flex-wrap items-center gap-1.5">
-            {locationFilters.map((option) => (
-              <button
-                key={option}
-                onClick={() => setLocationFilter(option)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${
-                  locationFilter === option
-                    ? "bg-foreground text-white shadow-sm"
-                    : "border border-line text-foreground/70 hover:bg-background"
-                }`}
-              >
-                {locationLabels[option]}
-                {option === "home" && homeCount > 0 && (
-                  <span className="ms-1.5 tabular-nums opacity-70">
-                    {homeCount}
-                  </span>
-                )}
-              </button>
-            ))}
-            <span className="mx-1 h-5 w-px bg-line" aria-hidden />
-            {filters.map((option) => (
-              <button
-                key={option}
-                onClick={() => setFilter(option)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium capitalize transition-all duration-150 ${
-                  activeFilter === option
-                    ? "bg-foreground text-white shadow-sm"
-                    : "border border-line text-foreground/70 hover:bg-background"
-                }`}
-              >
-                {filterLabels[option]}
-              </button>
-            ))}
+      <div className="flex flex-col gap-4 px-4 pt-4 sm:gap-6 sm:px-6 sm:pt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Appointments</h1>
+            <p className="text-sm text-muted">{visible.length} of {bookings.length} bookings</p>
           </div>
-        }
-      />
+          <ExportBar
+            rows={visible}
+            allRows={bookings}
+            onExport={exportBookingsCsv}
+          />
+        </div>
 
-      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
-        <ExportBar
-          rows={visible}
-          allRows={bookings}
-          onExport={exportBookingsCsv}
-        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {locationFilters.map((option) => (
+            <button
+              key={option}
+              onClick={() => handleLocationFilterChange(option)}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+                locationFilter === option
+                  ? "bg-foreground text-white shadow-sm"
+                  : "border border-line text-foreground/70 hover:bg-background"
+              }`}
+            >
+              {locationLabels[option]}
+              {option === "home" && homeCount > 0 && (
+                <span className="ms-1.5 tabular-nums opacity-70">
+                  {homeCount}
+                </span>
+              )}
+            </button>
+          ))}
+          <span className="mx-1 h-5 w-px bg-line" aria-hidden />
+          {filters.map((option) => (
+            <button
+              key={option}
+              onClick={() => handleFilterChange(option)}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium capitalize transition-all duration-150 ${
+                activeFilter === option
+                  ? "bg-foreground text-white shadow-sm"
+                  : "border border-line text-foreground/70 hover:bg-background"
+              }`}
+            >
+              {filterLabels[option]}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodFilter value={period} onChange={handlePeriodChange} />
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="hidden sm:inline">or pick a date</span>
+            <input
+              type="date"
+              value={exactDate}
+              onChange={(event) => handleExactDateChange(event.target.value)}
+              className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none transition focus:border-foreground/40 focus:ring-4 focus:ring-foreground/[0.06]"
+            />
+            {exactDate && (
+              <button
+                onClick={() => handleExactDateChange("")}
+                className="text-primary hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </label>
+        </div>
       </div>
 
       <main className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6 xl:flex-row">
@@ -246,7 +352,7 @@ export default function AppointmentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((booking, index) => (
+                    {paginatedBookings.map((booking, index) => (
                       <tr
                         key={booking.id}
                         onClick={() => setSelected(booking)}
@@ -287,6 +393,7 @@ export default function AppointmentsPage() {
                             status={booking.status}
                             onStatusChange={(newStatus) => changeStatus(booking, newStatus)}
                             isChanging={saving}
+                            disabledStatuses={statusRestrictions(booking)}
                           />
                         </td>
                       </tr>
@@ -296,8 +403,8 @@ export default function AppointmentsPage() {
               </div>
 
               {/* Mobile card list */}
-              <ul className="divide-y divide-line sm:hidden">
-                {visible.map((booking) => (
+              <ul className="flex flex-col gap-3 sm:hidden">
+                {paginatedBookings.map((booking) => (
                   <li key={booking.id}>
                     {/* A <div> here, not a <button> — the status badge
                         below renders its own interactive <button>, and
@@ -312,32 +419,33 @@ export default function AppointmentsPage() {
                           setSelected(booking);
                         }
                       }}
-                      className={`flex w-full cursor-pointer flex-col gap-1.5 px-4 py-3.5 text-left active:bg-background ${
-                        selected?.id === booking.id ? "bg-primary-50/60" : ""
+                      className={`flex w-full cursor-pointer flex-col gap-2 rounded-lg border border-line bg-surface px-5 py-4 text-left transition active:bg-background ${
+                        selected?.id === booking.id ? "bg-primary-50/60 border-primary-200" : "hover:bg-surface/80"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="min-w-0 truncate font-medium">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-semibold">
                           {booking.full_name}
                         </p>
-                        <span className="flex shrink-0 items-center gap-1.5">
+                        <span className="flex shrink-0 items-center gap-2">
                           <HomeBadge location={booking.service_location} />
                           <ClickableStatusBadge
                             status={booking.status}
                             onStatusChange={(newStatus) => changeStatus(booking, newStatus)}
                             isChanging={saving}
+                            disabledStatuses={statusRestrictions(booking)}
                           />
                         </span>
                       </div>
-                      <p className="truncate text-xs text-muted">
+                      <p className="truncate text-sm text-muted">
                         {booking.service_name} · {booking.staff_name}
                       </p>
-                      <div className="flex items-center justify-between text-xs text-muted">
+                      <div className="flex items-center justify-between text-sm text-muted">
                         <span className="tabular-nums">
                           {formatDateLong(booking.booking_date)} ·{" "}
                           {booking.booking_time}
                         </span>
-                        <span className="font-medium tabular-nums text-foreground">
+                        <span className="font-semibold tabular-nums text-foreground">
                           {formatMoney(Number(booking.total), booking.currency)}
                         </span>
                       </div>
@@ -345,6 +453,34 @@ export default function AppointmentsPage() {
                   </li>
                 ))}
               </ul>
+
+              {/* Pagination controls */}
+              {visible.length > 0 && (
+                <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-3 sm:px-6">
+                  <p className="text-xs text-muted sm:text-sm">
+                    Showing {Math.min((currentPage - 1) * itemsPerPage + 1, visible.length)}–{Math.min(currentPage * itemsPerPage, visible.length)} of {visible.length} appointments
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="rounded-md border border-line px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 hover:enabled:bg-background"
+                    >
+                      Previous
+                    </button>
+                    <div className="flex items-center gap-1 px-2 text-xs text-muted">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="rounded-md border border-line px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 hover:enabled:bg-background"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </section>
@@ -446,6 +582,25 @@ function DetailPanel({
         <p className="text-xs text-muted">{booking.mobile}</p>
       </div>
 
+      {/* Surfaced above the rest of the details — the team needs this
+          address to get to the job, not buried after the pricing lines. */}
+      {booking.service_location === "home" && booking.address && (
+        <div className="rounded-xl border border-primary-100 bg-primary-50 px-3 py-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
+            🚗 Home service address
+          </p>
+          <p className="mt-1 font-medium text-foreground">{booking.address}</p>
+          <a
+            href={`https://maps.google.com/?q=${encodeURIComponent(booking.address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+          >
+            Get directions →
+          </a>
+        </div>
+      )}
+
       <Detail label="Service" value={booking.service_name} />
       <Detail label="Staff" value={booking.staff_name} />
       <Detail
@@ -468,7 +623,10 @@ function DetailPanel({
         label="Total"
         value={formatMoney(Number(booking.total), booking.currency)}
       />
-      {booking.address && <Detail label="Address" value={booking.address} />}
+      {/* Home bookings already show their address in the callout above. */}
+      {booking.address && booking.service_location !== "home" && (
+        <Detail label="Address" value={booking.address} />
+      )}
       {booking.notes && <Detail label="Notes" value={booking.notes} />}
       {booking.voucher_code && (
         <Detail label="Voucher" value={booking.voucher_code} />
@@ -485,27 +643,40 @@ function DetailPanel({
         <p className="mb-2 text-xs uppercase text-muted">Update Status</p>
         <div className="flex flex-wrap gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
           {(["pending", "confirmed", "completed", "cancelled"] as const).map(
-            (status) => (
-              <button
-                key={status}
-                disabled={saving || booking.status === status}
-                onClick={() => onChangeStatus(booking, status)}
-                className={`relative flex-1 min-w-[80px] rounded-lg px-2.5 py-2 text-xs font-medium capitalize transition-all duration-300 disabled:cursor-not-allowed ${
-                  booking.status === status
-                    ? "bg-gradient-to-br from-white/20 to-white/5 text-foreground shadow-sm shadow-black/10"
-                    : "text-muted hover:text-foreground active:scale-95"
-                } ${
-                  saving && "opacity-60"
-                }`}
-              >
-                <span className="relative inline-flex items-center gap-1">
-                  {booking.status === status && (
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  )}
-                  {filterLabels[status]}
-                </span>
-              </button>
-            )
+            (status) => {
+              // "Completed" describes how the appointment went, so it's
+              // locked out until its start time actually arrives — the
+              // other statuses aren't time-gated.
+              const tooFuture =
+                status === "completed" &&
+                !hasAppointmentStarted(booking.booking_date, booking.booking_time);
+              return (
+                <button
+                  key={status}
+                  disabled={saving || booking.status === status || tooFuture}
+                  onClick={() => onChangeStatus(booking, status)}
+                  title={
+                    tooFuture
+                      ? "Can't mark this until the appointment's start time arrives"
+                      : undefined
+                  }
+                  className={`relative flex-1 min-w-[80px] rounded-lg px-2.5 py-2 text-xs font-medium capitalize transition-all duration-300 disabled:cursor-not-allowed ${
+                    booking.status === status
+                      ? "bg-gradient-to-br from-white/20 to-white/5 text-foreground shadow-sm shadow-black/10"
+                      : "text-muted hover:text-foreground active:scale-95"
+                  } ${
+                    (saving || tooFuture) && "opacity-60"
+                  }`}
+                >
+                  <span className="relative inline-flex items-center gap-1">
+                    {booking.status === status && (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    )}
+                    {filterLabels[status]}
+                  </span>
+                </button>
+              );
+            }
           )}
         </div>
         {saveError && <ErrorBanner message={saveError} />}

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Artisan Admin",
+  title: "Salon Spa Admin",
   description: "Salon and spa management dashboard.",
 };
 
