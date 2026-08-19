@@ -5,6 +5,7 @@ import {
   IconClipboardCheck,
   IconClock,
   IconDashboard,
+  IconImage,
   IconPieChart,
   IconRegister,
   IconScissors,
@@ -88,6 +89,12 @@ export const navGroups: NavGroup[] = [
       },
       { href: "/inventory", label: "Inventory", icon: IconBox },
       { href: "/promos", label: "Promos", icon: IconTag },
+      {
+        href: "/edit-page",
+        label: "Edit Page",
+        icon: IconImage,
+        restrictedFrom: ["staff"],
+      },
       {
         href: "/accounts",
         label: "Accounts",

@@ -130,6 +130,16 @@ export function IconTag(props: IconProps) {
   );
 }
 
+export function IconImage(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2.2" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      <path d="M4.2 17.2 9 12.4a1.6 1.6 0 0 1 2.26 0l1.44 1.44M14.5 14.9l1.84-1.84a1.6 1.6 0 0 1 2.26 0l1.6 1.6" />
+    </Svg>
+  );
+}
+
 export function IconSettings(props: IconProps) {
   return (
     <Svg {...props}>
