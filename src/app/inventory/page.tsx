@@ -17,10 +17,12 @@ import {
 } from "@/lib/inventory";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { formatMoney } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 export default function InventoryPage() {
+  useRequireRole({});
   const toast = useToast();
   const { session } = useAuth();
   const actor = session?.user.email ?? null;

@@ -10,6 +10,7 @@ import { IconCalendar, IconClose, IconRegister, IconSearch } from "@/components/
 import { useBookings } from "@/lib/useBookings";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
 import { usePagination } from "@/lib/usePagination";
@@ -30,6 +31,7 @@ const columns: Array<{ key: SortKey | "index"; label: string; align?: "right" }>
 ];
 
 export default function TransactionsPage() {
+  useRequireRole({});
   const { bookings, loading, error, reload } = useBookings();
   const toast = useToast();
   const { session, isSuperAdmin } = useAuth();

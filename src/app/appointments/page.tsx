@@ -17,6 +17,7 @@ import {
 } from "@/lib/bookings";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { useShop } from "@/lib/shop";
 import { formatDateLong, formatMoney, hasAppointmentStarted } from "@/lib/format";
 import { resolvePeriod, withinPeriod, type PeriodKey } from "@/lib/dateRange";
@@ -50,6 +51,7 @@ const filterLabels: Record<BookingStatus | "all", string> = {
 };
 
 export default function AppointmentsPage() {
+  useRequireRole({});
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
   const toast = useToast();

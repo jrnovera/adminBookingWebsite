@@ -16,10 +16,12 @@ import {
 } from "@/lib/promos";
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import type { Promo } from "@/lib/types";
 
 export default function PromosPage() {
+  useRequireRole({});
   const toast = useToast();
   const { session } = useAuth();
   const actor = session?.user.email ?? null;

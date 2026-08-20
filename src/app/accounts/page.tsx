@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { EmptyState, ErrorBanner } from "@/components/Feedback";
 import { IconUsers, IconTrash, IconPencil } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
+import { useAuth } from "@/lib/auth";
 import { useRequireRole } from "@/lib/useRequireRole";
 import {
   createAccount,
@@ -20,11 +21,17 @@ const roleLabels: Record<UserRole, string> = {
   staff: "Staff",
   admin: "Admin",
   superadmin: "Superadmin",
+  // Not offered in the role <select> below — developer is granted directly
+  // in the SQL editor (see 037_developer_role_and_page_visibility.sql), the
+  // same way the very first superadmin is. Only here so this record stays
+  // exhaustive over UserRole.
+  developer: "Developer",
 };
 
 export default function AccountsPage() {
   useRequireRole({ superadminOnly: true });
   const toast = useToast();
+  const { isDeveloper } = useAuth();
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,14 +95,23 @@ export default function AccountsPage() {
     }
   }
 
-  const pending = accounts.filter((a) => !a.approved);
-  const approved = accounts.filter((a) => a.approved);
+  // Developer accounts are invisible to everyone but another developer — a
+  // superadmin shouldn't know the maintainer's login exists, let alone be
+  // able to act on it. The list_user_accounts() RPC applies the same filter
+  // server-side (see 039_hide_developer_accounts.sql); this keeps the count
+  // and the rows consistent with what the caller is actually allowed to see.
+  const visibleAccounts = isDeveloper
+    ? accounts
+    : accounts.filter((a) => a.role !== "developer");
+
+  const pending = visibleAccounts.filter((a) => !a.approved);
+  const approved = visibleAccounts.filter((a) => a.approved);
 
   return (
     <>
       <PageHeader
         title="Accounts"
-        subtitle={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · superadmin only`}
+        subtitle={`${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"} · superadmin & developer only`}
       />
 
       <main className="flex-1 space-y-6 p-4 sm:p-6">
@@ -153,36 +169,47 @@ export default function AccountsPage() {
                   className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
                 >
                   <p className="min-w-0 truncate font-medium">{account.email}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={account.role}
-                      disabled={busyId === account.user_id}
-                      onChange={(event) =>
-                        handleRoleChange(account, event.target.value as UserRole)
-                      }
-                      className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none disabled:opacity-50"
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="admin">Admin</option>
-                      <option value="superadmin">Superadmin</option>
-                    </select>
-                    <button
-                      onClick={() => setEditingId(account.user_id)}
-                      disabled={busyId === account.user_id}
-                      className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
-                      title="Edit email/password"
-                    >
-                      <IconPencil size={16} />
-                    </button>
-                    <button
-                      onClick={() => setDeleteConfirmId(account.user_id)}
-                      disabled={busyId === account.user_id}
-                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-700 text-sm hover:bg-rose-100 disabled:opacity-50"
-                      title="Delete account"
-                    >
-                      <IconTrash size={16} />
-                    </button>
-                  </div>
+                  {account.role === "developer" ? (
+                    // Not editable from here: developer is granted and
+                    // revoked in the SQL editor only (see
+                    // 037_developer_role_and_page_visibility.sql), so a
+                    // superadmin can't demote or delete it by mistake through
+                    // this list.
+                    <span className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted">
+                      Developer
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={account.role}
+                        disabled={busyId === account.user_id}
+                        onChange={(event) =>
+                          handleRoleChange(account, event.target.value as UserRole)
+                        }
+                        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none disabled:opacity-50"
+                      >
+                        <option value="staff">Staff</option>
+                        <option value="admin">Admin</option>
+                        <option value="superadmin">Superadmin</option>
+                      </select>
+                      <button
+                        onClick={() => setEditingId(account.user_id)}
+                        disabled={busyId === account.user_id}
+                        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+                        title="Edit email/password"
+                      >
+                        <IconPencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(account.user_id)}
+                        disabled={busyId === account.user_id}
+                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-700 text-sm hover:bg-rose-100 disabled:opacity-50"
+                        title="Delete account"
+                      >
+                        <IconTrash size={16} />
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -191,7 +218,7 @@ export default function AccountsPage() {
 
         {editingId && (
           <EditAccountModal
-            account={accounts.find((a) => a.user_id === editingId)!}
+            account={visibleAccounts.find((a) => a.user_id === editingId)!}
             isOpen={true}
             onClose={() => setEditingId(null)}
             onSave={load}
@@ -201,10 +228,10 @@ export default function AccountsPage() {
 
         {deleteConfirmId && (
           <DeleteConfirmDialog
-            account={accounts.find((a) => a.user_id === deleteConfirmId)!}
+            account={visibleAccounts.find((a) => a.user_id === deleteConfirmId)!}
             isOpen={true}
             onConfirm={() => {
-              const account = accounts.find((a) => a.user_id === deleteConfirmId)!;
+              const account = visibleAccounts.find((a) => a.user_id === deleteConfirmId)!;
               handleDelete(account);
             }}
             onCancel={() => setDeleteConfirmId(null)}

@@ -21,6 +21,7 @@ import { deriveClients } from "@/lib/bookings";
 import { addDays, formatDateLong, formatMoney, toDateKey } from "@/lib/format";
 import { useBookings } from "@/lib/useBookings";
 import { useAuth } from "@/lib/auth";
+import { usePageVisibility } from "@/lib/pageVisibility";
 import type { UserRole } from "@/lib/roles";
 
 const CHART_COLOR = "#ffffff";
@@ -67,7 +68,8 @@ function greeting(hour: number) {
 
 export default function DashboardPage() {
   const { bookings, loading, error } = useBookings();
-  const { session, role, isSuperAdmin } = useAuth();
+  const { session, role, isSuperAdmin, isDeveloper } = useAuth();
+  const { visibility } = usePageVisibility();
   const today = toDateKey(new Date());
   const firstName = session?.user.email?.split("@")[0] ?? "there";
 
@@ -114,8 +116,18 @@ export default function DashboardPage() {
   );
 
   const visibleShortcuts = shortcuts.filter((s) => {
+    // Same rule as the sidebar (see navConfig.tsx's isVisible) — the
+    // developer's page_visibility toggles override restrictedFrom here too,
+    // so a page hidden from the sidebar doesn't still show a shortcut card.
+    if (isDeveloper) return true;
     if (s.superadminOnly && !isSuperAdmin) return false;
-    if (role && s.restrictedFrom?.includes(role)) return false;
+    const dynamic = visibility[s.href];
+    const hiddenFromStaff = dynamic
+      ? dynamic.hiddenFromStaff
+      : Boolean(s.restrictedFrom?.includes("staff"));
+    const hiddenFromAdminTier = dynamic ? dynamic.hiddenFromAdmin : false;
+    if (role === "staff" && hiddenFromStaff) return false;
+    if (role && role !== "staff" && hiddenFromAdminTier) return false;
     return true;
   });
 

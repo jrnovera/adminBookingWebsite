@@ -22,6 +22,7 @@ import {
 import { fetchStaff, fetchTimeOff, isStaffOffOn } from "@/lib/staff";
 import { useShop } from "@/lib/shop";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { logActivity } from "@/lib/activity";
 import { useBookings } from "@/lib/useBookings";
 import { useVisibleDayCount } from "@/lib/useMediaQuery";
@@ -43,6 +44,7 @@ const ALL = "__all";
 const UNASSIGNED = "__unassigned";
 
 export default function CalendarPage() {
+  useRequireRole({});
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
   const toast = useToast();

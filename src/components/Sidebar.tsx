@@ -6,6 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
+import { usePageVisibility } from "@/lib/pageVisibility";
 import { isActive, visibleNavGroups } from "./navConfig";
 import { IconLogout, IconSidebarCollapse } from "./Icons";
 import SignOutConfirmDialog from "./SignOutConfirmDialog";
@@ -16,8 +17,9 @@ export { navItems } from "./navConfig";
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { session, signOut, role, isSuperAdmin } = useAuth();
-  const groups = visibleNavGroups(role, isSuperAdmin);
+  const { session, signOut, role, isSuperAdmin, isDeveloper } = useAuth();
+  const { visibility } = usePageVisibility();
+  const groups = visibleNavGroups(role, isSuperAdmin, isDeveloper, visibility);
   const { settings } = useShop();
   const [collapsed, setCollapsed] = useState(false);
   const [ready, setReady] = useState(false);

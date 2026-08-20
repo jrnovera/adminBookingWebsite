@@ -87,7 +87,13 @@ Deno.serve(async (req) => {
     .eq("user_id", callerData.user.id)
     .maybeSingle();
 
-  if (callerRole?.role !== "superadmin" || !callerRole.approved) {
+  // 'developer' is a superset of 'superadmin' (see 037_developer_role_and_
+  // page_visibility.sql) — it gets every superadmin power plus the page
+  // visibility controls, so it must pass this gate too.
+  const callerIsSuperadminOrAbove =
+    (callerRole?.role === "superadmin" || callerRole?.role === "developer") &&
+    callerRole.approved;
+  if (!callerIsSuperadminOrAbove) {
     return json({ error: "Only a superadmin can create accounts" }, 403);
   }
 

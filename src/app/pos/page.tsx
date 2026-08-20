@@ -12,6 +12,7 @@ import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconClose, IconRegister, IconSearch } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/lib/auth";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { useBookings } from "@/lib/useBookings";
 import { useShop } from "@/lib/shop";
 import { formatDateLong, formatMoney } from "@/lib/format";
@@ -33,6 +34,7 @@ const locationLabels: Record<ServiceLocation | "all", string> = {
 };
 
 export default function PosPage() {
+  useRequireRole({});
   const { bookings, loading, error, reload } = useBookings();
   const { settings } = useShop();
   const toast = useToast();

@@ -7,7 +7,7 @@ export default function AuthCard({
   title: string;
   subtitle: string;
   children: React.ReactNode;
-  footer: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden bg-background px-4">
@@ -40,7 +40,9 @@ export default function AuthCard({
 
         {children}
 
-        <p className="mt-6 text-center text-sm text-muted">{footer}</p>
+        {footer && (
+          <p className="mt-6 text-center text-sm text-muted">{footer}</p>
+        )}
       </div>
     </main>
   );

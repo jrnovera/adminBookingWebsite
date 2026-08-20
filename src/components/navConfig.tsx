@@ -15,16 +15,19 @@ import {
   IconWallet,
 } from "./Icons";
 import type { UserRole } from "@/lib/roles";
+import type { PageVisibilityMap } from "@/lib/pageVisibility";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: (props: { size?: number; className?: string }) => React.ReactElement;
-  /** Hidden from these roles — currently only 'staff' is ever restricted;
-   * admin and superadmin see everything. Undefined = visible to all. */
+  /** Hidden from these roles until the developer's page_visibility table
+   * loads (or if this item has no row there) — the starting point, not a
+   * hard rule. See isVisible below for how the dynamic map overrides this. */
   restrictedFrom?: UserRole[];
-  /** Visible only to the superadmin — separate from restrictedFrom because
-   * this hides from admin too, not just staff. */
+  /** Visible only to the superadmin (which developer also counts as) —
+   * separate from restrictedFrom/page_visibility because this is a security
+   * boundary (account management), not a business-configurable toggle. */
   superadminOnly?: boolean;
 };
 
@@ -113,27 +116,56 @@ export const navGroups: NavGroup[] = [
 
 export const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
 
+/** The items the developer's Page Visibility editor offers toggles for.
+ * Excludes superadminOnly items (account management is a security boundary,
+ * not a business-configurable toggle) and Dashboard ('/') — every guard
+ * redirects back to '/' when it blocks a page, so letting '/' itself be
+ * hidden would send a blocked role into a redirect loop. */
+export const manageableNavItems: NavItem[] = navItems.filter(
+  (item) => !item.superadminOnly && item.href !== "/"
+);
+
 function isVisible(
   item: NavItem,
   role: UserRole | null,
-  isSuperAdmin: boolean
+  isSuperAdmin: boolean,
+  isDeveloper: boolean,
+  visibility: PageVisibilityMap
 ): boolean {
+  // The developer set these toggles — they always see what they're toggling.
+  if (isDeveloper) return true;
   if (item.superadminOnly && !isSuperAdmin) return false;
-  if (role && item.restrictedFrom?.includes(role)) return false;
+
+  const dynamic = visibility[item.href];
+  const hiddenFromStaff = dynamic
+    ? dynamic.hiddenFromStaff
+    : Boolean(item.restrictedFrom?.includes("staff"));
+  // The 'admin' toggle covers both admin and superadmin — there's no
+  // separate per-role split for that tier, only staff vs. everyone else.
+  const hiddenFromAdminTier = dynamic ? dynamic.hiddenFromAdmin : false;
+
+  if (role === "staff" && hiddenFromStaff) return false;
+  if (role && role !== "staff" && hiddenFromAdminTier) return false;
   return true;
 }
 
 /** Same groups, filtered for what this role should actually see. A legacy
  * account with `role: null` sees everything, matching how the app behaved
- * before roles existed. */
+ * before roles existed. `visibility` comes from usePageVisibility() — pass
+ * `{}` (or omit) while it's still loading so items fall back to their static
+ * `restrictedFrom` default instead of flashing visible. */
 export function visibleNavGroups(
   role: UserRole | null,
-  isSuperAdmin: boolean
+  isSuperAdmin: boolean,
+  isDeveloper: boolean = false,
+  visibility: PageVisibilityMap = {}
 ): NavGroup[] {
   return navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => isVisible(item, role, isSuperAdmin)),
+      items: group.items.filter((item) =>
+        isVisible(item, role, isSuperAdmin, isDeveloper, visibility)
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

@@ -16,15 +16,56 @@ import { deleteAllBookings } from "@/lib/bookings";
 import { formatMinutes } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
+import { usePageVisibility, savePageVisibility } from "@/lib/pageVisibility";
+import { manageableNavItems } from "@/components/navConfig";
 import { useRequireRole } from "@/lib/useRequireRole";
 import { useToast } from "@/components/Toast";
 
 export default function SettingsPage() {
   useRequireRole({ blockStaff: true });
   const toast = useToast();
-  const { session, isSuperAdmin } = useAuth();
+  const { session, isSuperAdmin, isDeveloper } = useAuth();
   const actor = session?.user.email ?? null;
   const { reload } = useShop();
+  const {
+    visibility,
+    loading: visibilityLoading,
+    reload: reloadVisibility,
+  } = usePageVisibility();
+  const [visibilityBusyKey, setVisibilityBusyKey] = useState<string | null>(
+    null
+  );
+
+  async function togglePageVisibility(
+    key: string,
+    field: "hiddenFromStaff" | "hiddenFromAdmin",
+    checked: boolean
+  ) {
+    const current = visibility[key] ?? {
+      hiddenFromStaff: false,
+      hiddenFromAdmin: false,
+    };
+    setVisibilityBusyKey(key);
+    try {
+      await savePageVisibility(key, { ...current, [field]: checked });
+      reloadVisibility();
+      logActivity({
+        actor,
+        entity: "settings",
+        action: "edited",
+        summary: `${checked ? "Hid" : "Unhid"} ${key} ${
+          field === "hiddenFromStaff" ? "from staff" : "from admin/superadmin"
+        }`,
+      });
+    } catch (err) {
+      toast.error(
+        "Update failed",
+        err instanceof Error ? err.message : "Try again"
+      );
+    } finally {
+      setVisibilityBusyKey(null);
+    }
+  }
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -562,6 +603,82 @@ export default function SettingsPage() {
                 <Status status={wipeStatus} />
               </div>
             </div>
+          </Section>
+        )}
+
+        {isDeveloper && (
+          <Section
+            title="Page Visibility"
+            description="Developer only. Hide any sidebar page from staff, or from the admin/superadmin tier — you'll still see everything yourself regardless of these toggles."
+          >
+            {visibilityLoading ? (
+              <p className="text-sm text-muted">Loading…</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[420px] text-sm">
+                  <thead>
+                    <tr className="border-b border-line text-left text-xs font-medium uppercase tracking-wide text-muted">
+                      <th className="py-2 pr-3">Page</th>
+                      <th className="px-3 py-2 text-center">Hide from staff</th>
+                      <th className="px-3 py-2 text-center">
+                        Hide from admin/superadmin
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {manageableNavItems.map((item) => {
+                      const current = visibility[item.href] ?? {
+                        hiddenFromStaff: Boolean(
+                          item.restrictedFrom?.includes("staff")
+                        ),
+                        hiddenFromAdmin: false,
+                      };
+                      const busy = visibilityBusyKey === item.href;
+                      return (
+                        <tr key={item.href}>
+                          <td className="py-2.5 pr-3 font-medium">
+                            {item.label}
+                            <span className="ml-2 text-xs font-normal text-muted">
+                              {item.href}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={current.hiddenFromStaff}
+                              disabled={busy}
+                              onChange={(event) =>
+                                togglePageVisibility(
+                                  item.href,
+                                  "hiddenFromStaff",
+                                  event.target.checked
+                                )
+                              }
+                              className="h-4 w-4 accent-[var(--primary)] disabled:opacity-50"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={current.hiddenFromAdmin}
+                              disabled={busy}
+                              onChange={(event) =>
+                                togglePageVisibility(
+                                  item.href,
+                                  "hiddenFromAdmin",
+                                  event.target.checked
+                                )
+                              }
+                              className="h-4 w-4 accent-[var(--primary)] disabled:opacity-50"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Section>
         )}
       </main>

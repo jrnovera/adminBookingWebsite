@@ -6,6 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useShop } from "@/lib/shop";
+import { usePageVisibility } from "@/lib/pageVisibility";
 import { isActive, visibleNavGroups } from "./navConfig";
 import { IconClose, IconLogout } from "./Icons";
 import SignOutConfirmDialog from "./SignOutConfirmDialog";
@@ -22,8 +23,9 @@ export default function MobileNav({
   onClose: () => void;
 }) {
   const pathname = usePathname();
-  const { session, signOut, role, isSuperAdmin } = useAuth();
-  const groups = visibleNavGroups(role, isSuperAdmin);
+  const { session, signOut, role, isSuperAdmin, isDeveloper } = useAuth();
+  const { visibility } = usePageVisibility();
+  const groups = visibleNavGroups(role, isSuperAdmin, isDeveloper, visibility);
   const { settings } = useShop();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 

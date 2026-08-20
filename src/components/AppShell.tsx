@@ -9,7 +9,7 @@ import { ToastProvider } from "./Toast";
 import SignOutConfirmDialog from "./SignOutConfirmDialog";
 import { useAuth } from "@/lib/auth";
 
-const publicRoutes = ["/login", "/register"];
+const publicRoutes = ["/login"];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { session, loading, roleLoading, isPendingApproval, signOut } =

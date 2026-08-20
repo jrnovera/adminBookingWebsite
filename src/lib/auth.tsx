@@ -20,7 +20,12 @@ type AuthValue = {
   roleLoading: boolean;
   /** `null` = legacy account with no role row = unrestricted (see lib/roles.ts). */
   role: UserRole | null;
+  /** True for superadmin AND developer — developer is a superset of
+   * superadmin, so every superadmin-gated page/action also opens for it. */
   isSuperAdmin: boolean;
+  /** The one role that can edit page_visibility (see lib/pageVisibility.ts)
+   * and always sees every nav item regardless of what's hidden there. */
+  isDeveloper: boolean;
   /** True for admin or superadmin, or a legacy account with no role row.
    * False only for an explicit 'staff' role. */
   isAdminOrAbove: boolean;
@@ -36,6 +41,7 @@ const defaultValue: AuthValue = {
   roleLoading: true,
   role: null,
   isSuperAdmin: false,
+  isDeveloper: false,
   isAdminOrAbove: true,
   isPendingApproval: false,
   signOut: async () => {},
@@ -91,7 +97,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // A legacy row-less account is full access; an explicit row must be
   // approved to count for anything.
   const approved = info ? info.approved : true;
-  const isSuperAdmin = role === "superadmin" && approved;
+  const isDeveloper = role === "developer" && approved;
+  const isSuperAdmin = (role === "superadmin" || isDeveloper) && approved;
   const isAdminOrAbove = approved && (role === null || role !== "staff");
   const isPendingApproval = Boolean(!roleLoading && info && !info.approved);
 
@@ -102,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roleLoading,
       role,
       isSuperAdmin,
+      isDeveloper,
       isAdminOrAbove,
       isPendingApproval,
       signOut: async () => {
@@ -114,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roleLoading,
       role,
       isSuperAdmin,
+      isDeveloper,
       isAdminOrAbove,
       isPendingApproval,
     ]

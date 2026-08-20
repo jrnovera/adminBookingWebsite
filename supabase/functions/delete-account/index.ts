@@ -68,7 +68,11 @@ Deno.serve(async (req) => {
     .eq("user_id", callerData.user.id)
     .maybeSingle();
 
-  if (callerRole?.role !== "superadmin" || !callerRole.approved) {
+  // 'developer' is a superset of 'superadmin' — see create-account/index.ts.
+  const callerIsSuperadminOrAbove =
+    (callerRole?.role === "superadmin" || callerRole?.role === "developer") &&
+    callerRole.approved;
+  if (!callerIsSuperadminOrAbove) {
     return json({ error: "Only a superadmin can delete accounts" }, 403);
   }
 
@@ -86,6 +90,21 @@ Deno.serve(async (req) => {
 
   if (userId === callerData.user.id) {
     return json({ error: "You can't delete your own account" }, 400);
+  }
+
+  // Only a developer may act on a developer account. This runs with the
+  // service role key, which bypasses RLS entirely, so the policy added in
+  // 039_hide_developer_accounts.sql does NOT protect this path — the check
+  // has to be repeated here. Returns the same 404-ish message a nonexistent
+  // account would, so a superadmin can't probe for developer user ids.
+  const { data: targetRole } = await adminClient
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (targetRole?.role === "developer" && callerRole.role !== "developer") {
+    return json({ error: "Account not found" }, 404);
   }
 
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);

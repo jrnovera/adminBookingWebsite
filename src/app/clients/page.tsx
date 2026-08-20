@@ -8,6 +8,7 @@ import Pagination from "@/components/Pagination";
 import { EmptyState, ErrorBanner, TableSkeleton } from "@/components/Feedback";
 import { IconPlus, IconSearch, IconUsers } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
+import { useRequireRole } from "@/lib/useRequireRole";
 import { deriveClients } from "@/lib/bookings";
 import { fetchClientRows, mergeClientRows, type ClientRow } from "@/lib/clients";
 import { formatDateLong, formatMoney } from "@/lib/format";
@@ -17,6 +18,7 @@ import { usePagination } from "@/lib/usePagination";
 const PAGE_SIZE = 20;
 
 export default function ClientsPage() {
+  useRequireRole({});
   const router = useRouter();
   const toast = useToast();
   const { bookings, loading, error } = useBookings();

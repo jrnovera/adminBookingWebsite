@@ -48,20 +48,6 @@ async function readError(res: Response): Promise<string> {
 }
 
 /**
- * Public sign-up — no session required. Always lands as role 'staff' with
- * approved = false; a superadmin has to accept it from the Team screen
- * before it can sign in (see supabase/functions/self-signup).
- */
-export async function signUpAsStaff(email: string, password: string) {
-  const res = await fetch(`${FUNCTIONS_URL}/self-signup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: ANON_KEY },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-}
-
-/**
  * Superadmin-only: create an already-approved account with a chosen role,
  * from inside the app (see supabase/functions/create-account). Requires the
  * caller's own access token, which the Edge Function re-verifies server-side
