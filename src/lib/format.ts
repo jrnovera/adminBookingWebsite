@@ -18,7 +18,10 @@ export function parseTimeToMinutes(time: string) {
 }
 
 export function formatMinutes(totalMinutes: number) {
-  const hours24 = Math.floor(totalMinutes / 60);
+  // Wrap past midnight before picking the meridiem: the calendar axis runs to
+  // 1440 (24:00), and without the % 24 that hit the `>= 12` branch and
+  // rendered midnight as "12:00 PM".
+  const hours24 = Math.floor(totalMinutes / 60) % 24;
   const minutes = totalMinutes % 60;
   const meridiem = hours24 >= 12 ? "PM" : "AM";
   const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
